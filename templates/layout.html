@@ -4,7 +4,6 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>{{ page_title }}</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
     :root { font-family: "Segoe UI", system-ui, sans-serif; background: #f4f5f7; color: #1a1a1a; }
     body { margin: 0; padding: 1.25rem; max-width: 1200px; margin-inline: auto; }
@@ -17,64 +16,85 @@
       padding: 0.75rem 0.75rem 0.25rem;
     }
     .card h2 { font-size: 0.85rem; font-weight: 600; margin: 0 0 0.5rem; color: #333; }
-    .chart-wrap { position: relative; height: 240px; }
-    #err { display: none; background: #fde8e8; color: #8b1a1a; padding: 0.75rem 1rem;
-           border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; }
+    .chart-wrap { position: relative; height: 260px; }
+    .chart-wrap svg.figure-panel { display: block; width: 100%; height: 100%; }
+    #err {
+      background: #fde8e8; color: #8b1a1a; padding: 0.75rem 1rem;
+      border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem;
+    }
     #status { font-size: 0.88rem; color: #444; margin: 0 0 0.75rem; min-height: 1.25em; }
     .gdp-controls {
-      display: none; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
       background: #fff; border-radius: 8px; padding: 0.65rem 1rem; margin-bottom: 1rem;
       box-shadow: 0 1px 3px rgba(0,0,0,.06); font-size: 0.88rem;
     }
     .gdp-controls label { flex: 1 1 200px; font-weight: 500; color: #333; }
     .gdp-controls input[type=range] { flex: 1 1 180px; max-width: 280px; }
     #gdp-readout { font-variant-numeric: tabular-nums; color: #555; min-width: 12rem; }
+    pre.err { white-space: pre-wrap; }
   </style>
 </head>
 <body>
   <h1>Figure 1 — External stress tests</h1>
-  <p class="sub">Output 2-1 / Chart Data ranges. First paint uses each graph node&rsquo;s stored
-    <code>value</code> (Excel&rsquo;s cached result at graph build). When the background <code>FormulaEvaluator</code>
-    pass finishes (or errors), the charts hot-swap without polling.</p>
-  <div id="status">{{ status_text }}</div>
-  <div id="err"></div>
-  <div id="gdp-slot">{% include "partials/gdp_controls.html" %}</div>
-  <div
-    class="grid"
-    id="charts"
-    hx-get="/figure1/charts"
-    hx-trigger="load"
-    hx-swap="innerHTML"
-  >{% include "partials/charts.html" %}</div>
+  <p class="sub">Data from precached JSON. Charts are SSR inline SVG; all GDP shock variants are embedded as
+    <code>&lt;g&gt;</code> layers and the slider toggles <code>hidden</code>. Numeric payloads are in
+    <code>&lt;script type=&quot;application/json&quot; id=&quot;figure1-data&quot;&gt;</code>.</p>
+  <div id="status"></div>
+  {% if not ok %}
+  <div id="err"><pre class="err">{{ error_text }}</pre></div>
+  {% else %}
+  <div id="err" style="display:none;"></div>
+  <script type="application/json" id="figure1-data">{{ figure_data_json | safe }}</script>
+  <script type="application/json" id="figure1-meta">{{ cache_meta_json | safe }}</script>
+  <div class="gdp-controls" id="gdp-controls" aria-hidden="false">
+    <label id="gdp-label" for="gdp-bps">{{ gdp_label }}</label>
+    <input
+      type="range"
+      id="gdp-bps"
+      name="bps"
+      min="{{ gdp_bps_min }}"
+      max="{{ gdp_bps_max }}"
+      step="1"
+      value="0"
+    />
+    <span id="gdp-readout"></span>
+  </div>
+  <div class="grid" id="charts">{{ charts_html | safe }}</div>
   <script>
-    const errEl = document.getElementById("err");
-    const statusEl = document.getElementById("status");
-    function showErr(msg) {
-      errEl.style.display = "block";
-      errEl.textContent = msg;
-    }
-    function setStatus(msg) {
-      statusEl.textContent = msg;
-    }
+    (function () {
+      const dataEl = document.getElementById("figure1-data");
+      const metaEl = document.getElementById("figure1-meta");
+      const range = document.getElementById("gdp-bps");
+      const readout = document.getElementById("gdp-readout");
+      const statusEl = document.getElementById("status");
+      let meta = {};
+      try {
+        meta = metaEl && metaEl.textContent ? JSON.parse(metaEl.textContent) : {};
+      } catch (_) {}
+      if (meta.cache_path) {
+        statusEl.textContent = "Loaded cache: " + meta.cache_path;
+      }
 
-    const sse = new EventSource("/sse/figure1");
-    sse.addEventListener("figure1_charts", (evt) => {
-      try {
-        const html = evt.data || "";
-        if (!html) return;
-        htmx.swap("#charts", html, { swapStyle: "innerHTML" });
-      } catch (_) {}
-    });
-    sse.addEventListener("figure1_gdp", (evt) => {
-      try {
-        const el = document.getElementById("gdp-slot");
-        if (!el) return;
-        el.innerHTML = evt.data || "";
-        if (window.htmx) htmx.process(el);
-      } catch (_) {}
-    });
-    sse.addEventListener("figure1_status", (evt) => setStatus(evt.data || ""));
-    sse.addEventListener("figure1_error", (evt) => showErr(evt.data || ""));
+      function setBps(bps) {
+        const n = parseInt(bps, 10);
+        if (!Number.isFinite(n)) return;
+        document.querySelectorAll("svg.figure-panel").forEach(function (svg) {
+          svg.querySelectorAll("g.shock-layer").forEach(function (g) {
+            const gb = g.getAttribute("data-bps");
+            if (gb === String(n)) g.removeAttribute("hidden");
+            else g.setAttribute("hidden", "");
+          });
+        });
+        const rel = n * 1e-4;
+        readout.textContent = n + " bps (baseline * (1 + " + rel.toFixed(4) + "))";
+      }
+
+      range.addEventListener("input", function () {
+        setBps(range.value);
+      });
+      setBps(range.value);
+    })();
   </script>
+  {% endif %}
 </body>
 </html>

@@ -18,7 +18,7 @@ CHART_SHEET = "Chart Data"
 YEAR_ROW = 35
 
 # Baseline GDP forecast inputs (rows 12/13), forecasts start at column X.
-# Slider applies ±bps in decimal space (bps * 1e-4) to each forecast cell.
+# Slider applies relative bps: new = baseline + baseline * (bps * 1e-4) = baseline * (1 + bps * 1e-4).
 GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
 GDP_FORECAST_ROWS = (12, 13)  # 12: USD, 13: National currency (per workbook layout)
 GDP_FORECAST_START_COL = "X"
@@ -218,7 +218,7 @@ def gdp_forecast_baselines(
 
 
 def gdp_forecast_value_from_bps(baseline: float, bps: int) -> float:
-    return baseline + bps * 1e-4
+    return baseline + baseline * (bps * 1e-4)
 
 
 def cell_key(col: str, row: int) -> str:
@@ -271,37 +271,6 @@ def numeric_scalar(v: Any) -> float | None:
     return None
 
 
-def build_figure1_payload_from_graph_node_cache(graph: DependencyGraph) -> dict[str, Any]:
-    value_cols = col_letters()
-    cat_keys = category_keys()
-    categories: list[str] = []
-    for k in cat_keys:
-        node = graph.get_node(k)
-        categories.append(text_scalar(node.value if node else None))
-
-    panels_out: list[dict[str, Any]] = []
-    for panel in FIGURE1_PANELS:
-        series_out: list[dict[str, Any]] = []
-        for s in panel.series:
-            name = s.legend.strip() or "(unlabeled)"
-            ys = []
-            for col in value_cols:
-                key = cell_key(col, s.value_row)
-                n = graph.get_node(key)
-                ys.append(numeric_scalar(n.value if n else None))
-            series_out.append(
-                {
-                    "name": name,
-                    "data": ys,
-                    "borderColor": s.color,
-                    "borderDash": s.dash,
-                }
-            )
-        panels_out.append({"title": panel.title, "series": series_out})
-
-    return {"categories": categories, "panels": panels_out}
-
-
 def build_figure1_payload(
     graph: DependencyGraph,
     *,
@@ -335,8 +304,8 @@ def build_figure1_payload(
     if missing:
         sample = ", ".join(missing[:5])
         raise KeyError(
-            f"{len(missing)} Figure 1 value cells are missing from the graph "
-            f"(rebuild cache with extract_graph.py). Examples: {sample}"
+            f"{len(missing)} chart value cells are missing from the graph "
+            f"(rebuild: uv run python scripts/extract_graph.py --no-cache). Examples: {sample}"
         )
 
     evaluated = ev.evaluate(all_keys)
@@ -360,4 +329,3 @@ def build_figure1_payload(
         panels_out.append({"title": panel.title, "series": series_out})
 
     return {"categories": categories, "panels": panels_out}
-

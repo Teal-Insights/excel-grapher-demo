@@ -20,8 +20,8 @@ inputs match; use ``--no-cache`` to force a full rebuild. If you change
 
 With ``GRAPH_LOAD_VALUES=True``, each node’s ``value`` includes Excel’s cached
 calculated result for formula cells (from a data-only workbook read at build
-time), which ``main.py`` uses for an instant Figure 1 preview before
-``FormulaEvaluator`` finishes.
+time), which is useful for debugging and for tools that read graph nodes without
+a full ``FormulaEvaluator`` pass.
 """
 
 import argparse
@@ -80,7 +80,8 @@ GRAPH_MAX_DEPTH = 50
 GRAPH_LOAD_VALUES = True
 GRAPH_USE_CACHED_DYNAMIC_REFS = True
 
-_GRAPH_SCRIPT_DIR = Path(__file__).resolve().parent
+# Repo root (parent of ``lic_dsf``); graph cache and paths are cwd/repo-relative.
+_GRAPH_SCRIPT_DIR = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Export package
