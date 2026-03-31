@@ -4,7 +4,6 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>{{ page_title }}</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
     :root { font-family: "Segoe UI", system-ui, sans-serif; background: #f4f5f7; color: #1a1a1a; }
@@ -39,36 +38,17 @@
     pass finishes (or errors), the charts hot-swap without polling.</p>
   <div id="status">{{ status_text }}</div>
   <div id="err"></div>
-  {% if gdp.enabled %}
-  <form
-    class="gdp-controls"
-    id="gdp-controls"
-    style="display:flex;"
-    aria-hidden="false"
-    hx-post="/figure1/gdp-shock"
-    hx-trigger="input delay:150ms"
-    hx-target="#charts"
+  <div id="gdp-slot">{% include "partials/gdp_controls.html" %}</div>
+  <div
+    class="grid"
+    id="charts"
+    hx-get="/figure1/charts"
+    hx-trigger="load"
     hx-swap="innerHTML"
-  >
-    <label id="gdp-label" for="gdp-bps">{{ gdp.label }} — {{ gdp.cell }}</label>
-    <input
-      type="range"
-      id="gdp-bps"
-      name="bps"
-      min="{{ gdp.bps_min }}"
-      max="{{ gdp.bps_max }}"
-      step="1"
-      value="{{ gdp.bps }}"
-    />
-    <span id="gdp-readout">{{ gdp.readout }}</span>
-  </form>
-  {% endif %}
-  <div class="grid" id="charts">{% include "partials/charts.html" %}</div>
+  >{% include "partials/charts.html" %}</div>
   <script>
     const errEl = document.getElementById("err");
     const statusEl = document.getElementById("status");
-    const grid = document.getElementById("charts");
-    let charts = [];
     function showErr(msg) {
       errEl.style.display = "block";
       errEl.textContent = msg;
@@ -76,105 +56,21 @@
     function setStatus(msg) {
       statusEl.textContent = msg;
     }
-    function datasetsFromPanel(panel) {
-      return panel.series.map((s) => ({
-        label: s.name,
-        data: s.data,
-        borderColor: s.borderColor,
-        backgroundColor: "transparent",
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0,
-        borderDash: s.borderDash && s.borderDash.length ? s.borderDash : undefined,
-        spanGaps: true,
-      }));
-    }
-    function buildCharts(data) {
-      const canvases = Array.from(grid.querySelectorAll("canvas[data-panel-index]"));
-      if (canvases.length !== data.panels.length) {
-        grid.innerHTML = "";
-        charts = [];
-        data.panels.forEach((panel) => {
-          const card = document.createElement("div");
-          card.className = "card";
-          card.innerHTML = "<h2>" + panel.title + "</h2><div class=\"chart-wrap\"><canvas></canvas></div>";
-          grid.appendChild(card);
-          const canvas = card.querySelector("canvas");
-          charts.push(new Chart(canvas, {
-            type: "line",
-            data: { labels: data.categories, datasets: datasetsFromPanel(panel) },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              interaction: { mode: "index", intersect: false },
-              plugins: {
-                legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
-              },
-              scales: {
-                x: { grid: { display: false }, ticks: { maxRotation: 0, font: { size: 10 } } },
-                y: { ticks: { font: { size: 10 } }, grid: { color: "#e8e9eb" } },
-              },
-            },
-          }));
-        });
-        return;
-      }
-      charts = canvases.map((canvas, i) => new Chart(canvas, {
-        type: "line",
-        data: { labels: data.categories, datasets: datasetsFromPanel(data.panels[i]) },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { maxRotation: 0, font: { size: 10 } } },
-            y: { ticks: { font: { size: 10 } }, grid: { color: "#e8e9eb" } },
-          },
-        },
-      }));
-    }
-    function updateCharts(data) {
-      data.panels.forEach((panel, i) => {
-        if (!charts[i]) return;
-        charts[i].data.labels = data.categories;
-        panel.series.forEach((s, j) => {
-          if (charts[i].data.datasets[j]) charts[i].data.datasets[j].data = s.data;
-        });
-        charts[i].update("none");
-      });
-    }
-    function parseFigureData() {
-      const el = document.getElementById("figure1-data");
-      if (!el) return null;
-      try { return JSON.parse(el.textContent); } catch (_) { return null; }
-    }
-    function destroyCharts() {
-      charts.forEach((c) => { try { c.destroy(); } catch (_) {} });
-      charts = [];
-    }
-    function initFromDom() {
-      const d = parseFigureData();
-      if (!d) return;
-      destroyCharts();
-      buildCharts(d);
-    }
-    document.addEventListener("htmx:afterSwap", (evt) => {
-      if (evt.detail && evt.detail.target && evt.detail.target.id === "charts") {
-        initFromDom();
-      }
-    });
-    initFromDom();
 
     const sse = new EventSource("/sse/figure1");
     sse.addEventListener("figure1_charts", (evt) => {
       try {
         const html = evt.data || "";
         if (!html) return;
-        destroyCharts();
         htmx.swap("#charts", html, { swapStyle: "innerHTML" });
+      } catch (_) {}
+    });
+    sse.addEventListener("figure1_gdp", (evt) => {
+      try {
+        const el = document.getElementById("gdp-slot");
+        if (!el) return;
+        el.innerHTML = evt.data || "";
+        if (window.htmx) htmx.process(el);
       } catch (_) {}
     });
     sse.addEventListener("figure1_status", (evt) => setStatus(evt.data || ""));

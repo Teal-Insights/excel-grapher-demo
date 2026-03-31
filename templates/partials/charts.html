@@ -1,15 +1,10 @@
-<script type="application/json" id="figure1-data">{{ figure_payload_json|safe }}</script>
-
-{% for i in range(0, 4) %}
-  {% set panel_title = figure.panels[i].title if figure.panels and i < (figure.panels|length) else "" %}
-  {% set panel_index = i %}
-  {% if i == 0 %}
-    {% include "panels/panel_0.html" with context %}
-  {% elif i == 1 %}
-    {% include "panels/panel_1.html" with context %}
-  {% elif i == 2 %}
-    {% include "panels/panel_2.html" with context %}
-  {% elif i == 3 %}
-    {% include "panels/panel_3.html" with context %}
-  {% endif %}
-{% endfor %}
+{% if svg_panels %}
+  {% for p in svg_panels %}
+    <div class="card">
+      <h2>{{ p.title }}</h2>
+      <div class="chart-wrap">
+        {{ p.svg|safe }}
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -41,14 +42,15 @@ from figure1_data import (
     gdp_forecast_value_from_bps,
     numeric_scalar,
 )
+from ssr_charts import render_figure_svg_panels
 
 
 def _patch_excel_grapher_functions() -> None:
     """
     Extend excel-grapher's function table with Excel boolean constants.
 
-    Some workbooks encode boolean literals as `FALSE()` / `TRUE()`, which may be
-    parsed as function calls by excel-grapher. Treat them as zero-arg functions.
+    Some workbooks encode boolean literals as `FALSE()` / `TRUE()` as function
+    calls. Treat them as zero-arg functions.
     """
     try:
         import excel_grapher.evaluator.evaluator as evmod
@@ -96,6 +98,12 @@ def _load_graph_sync() -> DependencyGraph:
     wb = lic_graph.WORKBOOK_PATH
     cache_path = lic_graph._default_graph_cache_path(wb)
     targets = _collect_export_targets()
+    t0 = time.perf_counter()
+    _log.info(
+        "Dependency graph: loading (cache=%s, %d export targets)",
+        cache_path,
+        len(targets),
+    )
     g = lic_graph.try_load_graph_cache(
         cache_path,
         wb,
@@ -103,7 +111,16 @@ def _load_graph_sync() -> DependencyGraph:
         max_depth=lic_graph.GRAPH_MAX_DEPTH,
     )
     if g is not None:
+        dt = time.perf_counter() - t0
+        _log.info(
+            "Dependency graph: loaded from cache — %d nodes in %.2fs",
+            len(g),
+            dt,
+        )
         return g
+    _log.info(
+        "Dependency graph: no usable cache; building from workbook (may take minutes)"
+    )
     if not wb.is_file():
         raise FileNotFoundError(
             f"Workbook not found: {wb}. No valid graph cache found at {cache_path}."
@@ -132,6 +149,12 @@ def _load_graph_sync() -> DependencyGraph:
         )
     except OSError:
         pass
+    dt = time.perf_counter() - t0
+    _log.info(
+        "Dependency graph: built from workbook — %d nodes in %.2fs (cache written)",
+        len(g),
+        dt,
+    )
     return g
 
 
@@ -172,7 +195,14 @@ def _gdp_meta_or_disabled(app: FastAPI) -> dict[str, Any]:
     if not gs:
         return {"enabled": False}
     g = _require_graph(app)
-    with app.state.figure_eval_lock:
+    # Never block request handling on evaluator work: if the lock is held (e.g.
+    # during a long evaluate), fall back to the last known metadata.
+    last: dict[str, Any] | None = getattr(app.state, "gdp_meta_cache", None)
+    lock: threading.Lock = app.state.figure_eval_lock
+    acquired = lock.acquire(blocking=False)
+    if not acquired:
+        return last or {"enabled": True, "bps": 0, "bps_min": GDP_SHOCK_BPS_MIN, "bps_max": GDP_SHOCK_BPS_MAX, "cell": f"{GDP_FORECAST_SHEET}!{GDP_FORECAST_START_COL}{GDP_FORECAST_ROWS[0]}…", "label": "GDP forecast adjustment (applied to baseline, ±10 bps)", "readout": "Working…"}
+    try:
         # Infer the current slider position from the first key in the bundle.
         key0 = gs["keys"][0]
         base0 = float(gs["baselines"][0])
@@ -183,11 +213,13 @@ def _gdp_meta_or_disabled(app: FastAPI) -> dict[str, Any]:
         raw_bps = (float(cur0) - base0) / 1e-4
         bps = int(round(raw_bps))
         bps = max(GDP_SHOCK_BPS_MIN, min(GDP_SHOCK_BPS_MAX, bps))
+    finally:
+        lock.release()
 
     delta = bps * 1e-4
     readout = f"{bps} bps (add {delta:.4f} to baseline GDP forecast cells)"
     cell_range = f"{GDP_FORECAST_SHEET}!{GDP_FORECAST_START_COL}{GDP_FORECAST_ROWS[0]}…"
-    return {
+    meta = {
         "enabled": True,
         "bps": bps,
         "bps_min": GDP_SHOCK_BPS_MIN,
@@ -198,6 +230,8 @@ def _gdp_meta_or_disabled(app: FastAPI) -> dict[str, Any]:
         "cell": cell_range,
         "readout": readout,
     }
+    app.state.gdp_meta_cache = meta
+    return meta
 
 
 def _figure_payload(app: FastAPI) -> dict[str, Any]:
@@ -212,10 +246,42 @@ def _figure_payload(app: FastAPI) -> dict[str, Any]:
 
 def _render_charts_fragment(app: FastAPI) -> str:
     payload = _figure_payload(app)
+    svg_panels = render_figure_svg_panels(payload)
     return _render_template(
         "partials/charts.html",
         figure=payload,
-        figure_payload_json=_json_for_script_tag(payload),
+        svg_panels=svg_panels,
+    )
+
+
+def _render_charts_fragment_cached(app: FastAPI) -> str:
+    html: str = getattr(app.state, "figure1_charts_html", "") or ""
+    if html:
+        return html
+    # Avoid doing heavy SVG rendering on the request path.
+    return ""
+
+
+async def _render_charts_fragment_async(app: FastAPI) -> str:
+    """
+    Render charts to HTML without blocking the event loop.
+
+    Matplotlib SVG generation is CPU-heavy; do that in a worker thread. Template
+    rendering stays on the main thread to avoid thread-safety surprises.
+    """
+    payload = _figure_payload(app)
+    svg_panels = await asyncio.to_thread(lambda: render_figure_svg_panels(payload))
+    return _render_template(
+        "partials/charts.html",
+        figure=payload,
+        svg_panels=svg_panels,
+    )
+
+
+def _render_gdp_slot_fragment(app: FastAPI) -> str:
+    return _render_template(
+        "partials/gdp_controls.html",
+        gdp=_gdp_meta_or_disabled(app),
     )
 
 
@@ -232,6 +298,7 @@ def _figure1_state_init() -> dict[str, Any]:
 async def _lifespan(app: FastAPI):
     _patch_excel_grapher_functions()
     app.state.figure1 = _figure1_state_init()
+    app.state.figure1_charts_html = ""
     app.state.gdp_shock = None
     app.state.dependency_graph = None
     app.state.figure1_evaluator = None
@@ -239,6 +306,8 @@ async def _lifespan(app: FastAPI):
     app.state.figure1_user_touched = False
     app.state.figure1_bg_eval_finished = False
     app.state.figure1_sse_clients: set[asyncio.Queue[tuple[str, str]]] = set()
+    app.state.shutdown_event = asyncio.Event()
+    app.state.bg_tasks: set[asyncio.Task[object]] = set()
 
     def _sse_publish(event: str, data: str) -> None:
         clients: set[asyncio.Queue[tuple[str, str]]] = getattr(
@@ -252,6 +321,8 @@ async def _lifespan(app: FastAPI):
 
     async def run_evaluated() -> None:
         try:
+            if app.state.shutdown_event.is_set():
+                return
             graph: DependencyGraph | None = getattr(
                 app.state, "dependency_graph", None
             )
@@ -270,6 +341,8 @@ async def _lifespan(app: FastAPI):
                     )
 
             payload = await asyncio.to_thread(work)
+            if app.state.shutdown_event.is_set():
+                return
             if payload is None:
                 return
             if getattr(app.state, "figure1_user_touched", False):
@@ -280,8 +353,9 @@ async def _lifespan(app: FastAPI):
                 "panels": payload["panels"],
                 "eval_error": None,
             }
+            app.state.figure1_charts_html = await _render_charts_fragment_async(app)
             _sse_publish("figure1_status", "Showing FormulaEvaluator results.")
-            _sse_publish("figure1_charts", _render_charts_fragment(app))
+            _sse_publish("figure1_charts", app.state.figure1_charts_html)
         except Exception as exc:
             if not getattr(app.state, "figure1_user_touched", False):
                 app.state.figure1["eval_error"] = repr(exc)
@@ -289,66 +363,93 @@ async def _lifespan(app: FastAPI):
         finally:
             app.state.figure1_bg_eval_finished = True
 
-    try:
-        def _prime_figure1() -> tuple[dict[str, Any], DependencyGraph]:
-            g = _load_graph_sync()
-            prev = build_figure1_payload_from_graph_node_cache(g)
-            return prev, g
+    async def bootstrap_figure1() -> None:
+        """
+        Load graph + node-cache preview off the startup critical path.
+        Pushes preview HTML via SSE so charts appear without a full reload.
+        """
+        try:
+            if app.state.shutdown_event.is_set():
+                return
+            def _prime_figure1() -> tuple[dict[str, Any], DependencyGraph]:
+                g = _load_graph_sync()
+                prev = build_figure1_payload_from_graph_node_cache(g)
+                return prev, g
 
-        preview, graph0 = await asyncio.to_thread(_prime_figure1)
-        app.state.dependency_graph = graph0
-        app.state.gdp_shock = _init_gdp_shock_state(graph0)
-        app.state.figure1 = {
-            "source": "graph_node_cache",
-            "categories": preview["categories"],
-            "panels": preview["panels"],
-            "eval_error": None,
-        }
-        iterate_enabled = False
-        iterate_count = 100
-        iterate_delta = 0.001
-        if lic_graph.WORKBOOK_PATH.is_file():
-            settings = lic_graph.get_calc_settings(lic_graph.WORKBOOK_PATH)
-            iterate_enabled = settings.iterate_enabled
-            iterate_count = settings.iterate_count
-            iterate_delta = settings.iterate_delta
-        app.state.figure1_evaluator = FormulaEvaluator(
-            graph0,
-            iterate_enabled=iterate_enabled,
-            iterate_count=iterate_count,
-            iterate_delta=iterate_delta,
-        )
-        _sse_publish(
-            "figure1_status",
-            "Showing values stored on graph nodes (Excel cache at graph build). Recomputing\u2026",
-        )
-    except FileNotFoundError as exc:
-        app.state.figure1 = {
-            "source": "error",
-            "categories": [],
-            "panels": [],
-            "eval_error": str(exc),
-        }
-        _sse_publish("figure1_error", str(exc))
-    except RuntimeError as exc:
-        app.state.figure1 = {
-            "source": "error",
-            "categories": [],
-            "panels": [],
-            "eval_error": str(exc),
-        }
-        _sse_publish("figure1_error", str(exc))
-    except KeyError as exc:
-        app.state.figure1 = {
-            "source": "error",
-            "categories": [],
-            "panels": [],
-            "eval_error": str(exc),
-        }
-        _sse_publish("figure1_error", str(exc))
+            _log.info("Figure 1: building preview from graph node cache…")
+            t_preview = time.perf_counter()
+            preview, graph0 = await asyncio.to_thread(_prime_figure1)
+            if app.state.shutdown_event.is_set():
+                return
+            _log.info(
+                "Figure 1: preview ready in %.2fs (%d categories, %d panels)",
+                time.perf_counter() - t_preview,
+                len(preview.get("categories", [])),
+                len(preview.get("panels", [])),
+            )
+            app.state.dependency_graph = graph0
+            # Defer GDP control initialization (workbook reads) until first use.
+            app.state.gdp_shock = None
+            app.state.figure1 = {
+                "source": "graph_node_cache",
+                "categories": preview["categories"],
+                "panels": preview["panels"],
+                "eval_error": None,
+            }
+            # Defer expensive SVG rendering until requested by the client.
+            app.state.figure1_charts_html = ""
+            # Defer workbook settings reads for calc; use defaults initially.
+            app.state.figure1_evaluator = FormulaEvaluator(graph0)
+            _sse_publish(
+                "figure1_status",
+                "Showing values stored on graph nodes (Excel cache at graph build). Recomputing\u2026",
+            )
+            _sse_publish("figure1_gdp", _render_gdp_slot_fragment(app))
+        except FileNotFoundError as exc:
+            app.state.figure1 = {
+                "source": "error",
+                "categories": [],
+                "panels": [],
+                "eval_error": str(exc),
+            }
+            _sse_publish("figure1_error", str(exc))
+        except RuntimeError as exc:
+            app.state.figure1 = {
+                "source": "error",
+                "categories": [],
+                "panels": [],
+                "eval_error": str(exc),
+            }
+            _sse_publish("figure1_error", str(exc))
+        except KeyError as exc:
+            app.state.figure1 = {
+                "source": "error",
+                "categories": [],
+                "panels": [],
+                "eval_error": str(exc),
+            }
+            _sse_publish("figure1_error", str(exc))
 
-    asyncio.create_task(run_evaluated())
+        asyncio.create_task(run_evaluated())
+
+    # Complete initial graph + preview build before serving requests. This keeps
+    # request handling responsive even when bootstrap work is CPU-heavy.
+    await bootstrap_figure1()
     yield
+
+    # Shutdown: signal tasks, close SSE streams, and cancel background work.
+    app.state.shutdown_event.set()
+    for q in list(getattr(app.state, "figure1_sse_clients", set())):
+        try:
+            q.put_nowait(("shutdown", ""))
+        except asyncio.QueueFull:
+            pass
+
+    for t in list(getattr(app.state, "bg_tasks", set())):
+        t.cancel()
+    if getattr(app.state, "bg_tasks", None):
+        await asyncio.gather(*list(app.state.bg_tasks), return_exceptions=True)
+
 
 
 app = FastAPI(title="LIC-DSF Figure 1", lifespan=_lifespan)
@@ -357,6 +458,15 @@ app = FastAPI(title="LIC-DSF Figure 1", lifespan=_lifespan)
 @app.get("/favicon.ico")
 def favicon() -> Response:
     return Response(status_code=204)
+
+
+@app.get("/figure1/charts", response_class=HTMLResponse)
+async def figure1_charts_fragment() -> str:
+    """
+    Render SSR SVG charts fragment on-demand.
+    """
+    app.state.figure1_charts_html = await _render_charts_fragment_async(app)
+    return app.state.figure1_charts_html
 
 
 @app.get("/sse/figure1")
@@ -369,7 +479,7 @@ async def sse_figure1() -> StreamingResponse:
         q.put_nowait(("figure1_error", f"Evaluation: {fig['eval_error']}"))
     if fig.get("source") == "evaluated":
         q.put_nowait(("figure1_status", "Showing FormulaEvaluator results."))
-        q.put_nowait(("figure1_charts", _render_charts_fragment(app)))
+        q.put_nowait(("figure1_charts", _render_charts_fragment_cached(app)))
     elif fig.get("source") == "graph_node_cache":
         q.put_nowait(
             (
@@ -377,12 +487,27 @@ async def sse_figure1() -> StreamingResponse:
                 "Showing values stored on graph nodes (Excel cache at graph build). Recomputing\u2026",
             )
         )
+        q.put_nowait(("figure1_charts", _render_charts_fragment_cached(app)))
+        q.put_nowait(("figure1_gdp", _render_gdp_slot_fragment(app)))
+    elif fig.get("source") == "loading":
+        q.put_nowait(
+            (
+                "figure1_status",
+                "Loading dependency graph and chart preview\u2026",
+            )
+        )
+    else:
+        # Ensure the SSE response flushes immediately even if the state is
+        # unexpected (e.g., partially initialized).
+        q.put_nowait(("figure1_status", "Loading dependency graph\u2026"))
 
     async def gen():
         try:
             while True:
                 try:
                     event, data = await asyncio.wait_for(q.get(), timeout=15.0)
+                    if event == "shutdown":
+                        return
                     yield f"event: {event}\n"
                     for line in (data or "").splitlines():
                         yield f"data: {line}\n"
@@ -428,11 +553,12 @@ async def htmx_gdp_shock(request: Request) -> str:
         "panels": payload["panels"],
         "eval_error": None,
     }
+    app.state.figure1_charts_html = await _render_charts_fragment_async(app)
     status = _render_template(
         "partials/status.html",
         status_text="FormulaEvaluator results (baseline GDP forecast adjusted by slider bps).",
     )
-    return _render_charts_fragment(app) + status
+    return app.state.figure1_charts_html + status
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -447,6 +573,8 @@ def index() -> str:
         )
     elif fig.get("source") == "error":
         status_text = "Figure data not ready."
+    elif fig.get("source") == "loading":
+        status_text = "Loading dependency graph and chart preview\u2026"
     else:
         status_text = ""
     return _render_template(

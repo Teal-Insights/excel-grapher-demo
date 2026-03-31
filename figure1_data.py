@@ -19,7 +19,7 @@ YEAR_ROW = 35
 
 # Baseline GDP forecast inputs (rows 12/13), forecasts start at column X.
 # Slider applies ±bps in decimal space (bps * 1e-4) to each forecast cell.
-GDP_FORECAST_SHEET = "Input 3 - Macro Debt data(DMX)"
+GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
 GDP_FORECAST_ROWS = (12, 13)  # 12: USD, 13: National currency (per workbook layout)
 GDP_FORECAST_START_COL = "X"
 GDP_SHOCK_BPS_MIN = -10
