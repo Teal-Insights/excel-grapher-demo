@@ -46,6 +46,28 @@ def _escape(text: str) -> str:
     return html.escape(text, quote=True)
 
 
+def _bool_attr(value: Any) -> str:
+    return "true" if bool(value) else "false"
+
+
+_FOCAL_SERIES_NAMES = frozenset(
+    {
+        "Baseline",
+        "Historical scenario",
+        "MX shock Standard&Tailored",
+        "Threshold",
+    }
+)
+
+
+def _series_is_focal(series: dict[str, Any]) -> bool:
+    explicit = series.get("isFocal")
+    if explicit is not None:
+        return bool(explicit)
+    name = str(series.get("name", "") or "")
+    return name in _FOCAL_SERIES_NAMES
+
+
 def _finite_series_values(series: list[dict[str, Any]]) -> list[float]:
     out: list[float] = []
     for s in series:
@@ -169,18 +191,24 @@ def _render_panel_static(
 
     leg_y = margin_top + plot_h + 34
     leg_x0 = margin_left
-    names_colors: Iterable[tuple[str, str]] = (
-        (str(s.get("name", "") or ""), str(s.get("borderColor") or "#000000")) for s in series_for_legend
+    legend_items: Iterable[tuple[str, str, str]] = (
+        (
+            str(s.get("name", "") or ""),
+            str(s.get("borderColor") or "#000000"),
+            _bool_attr(_series_is_focal(s)),
+        )
+        for s in series_for_legend
     )
-    items = [(name, color) for name, color in names_colors if name]
+    items = [(name, color, focal) for name, color, focal in legend_items if name]
     col_w = plot_w / 2.0
-    for idx, (name, color) in enumerate(items):
+    for idx, (name, color, focal) in enumerate(items):
         col = idx % 2
         row = idx // 2
         lx = leg_x0 + col * col_w
         ly = leg_y + row * 12
         parts.append(
             f'<line x1="{lx:.2f}" y1="{ly:.2f}" x2="{lx + 14:.2f}" y2="{ly:.2f}" '
+            f'class="legend-swatch" data-series-name="{_escape(name)}" data-focal="{focal}" '
             f'stroke="{_escape(color)}" stroke-width="2"/>'
         )
         parts.append(
@@ -211,6 +239,9 @@ def _render_shock_polylines(
     plot_h = float(height) - margin_top - margin_bottom
     parts: list[str] = []
     for s in series:
+        name = str(s.get("name", "") or "")
+        color = str(s.get("borderColor") or "#000000")
+        focal = _bool_attr(_series_is_focal(s))
         dash = s.get("borderDash") or []
         ys = list(s.get("data") or [])
         d_attr = _dash_attr(dash if isinstance(dash, list) else [])
@@ -220,8 +251,9 @@ def _render_shock_polylines(
                 for i, v in seg
             )
             parts.append(
-                f'<polyline class="shock-line" fill="none" stroke-width="1.6" '
-                f'pointer-events="none" points="{pts}"{d_attr}/>'
+                f'<polyline class="shock-line" data-series-name="{_escape(name)}" '
+                f'data-focal="{focal}" fill="none" stroke="{_escape(color)}" '
+                f'stroke-width="1.6" pointer-events="none" points="{pts}"{d_attr}/>'
             )
     return "".join(parts)
 
@@ -321,7 +353,8 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
     """
     One <svg> per panel: a static <g class="panel-static"> (grid, axes, legend) plus one
     <g class="shock-layer" data-pct="…"> per shock containing only polylines. All layers
-    are visible; CSS grays out non-selected shocks and paints the selected shock red.
+    are visible; CSS grays out non-selected shocks and keeps selected focal series at
+    their legend colors.
     """
     by_shock = payloads_by_shock(cache_doc)
     if not by_shock:
