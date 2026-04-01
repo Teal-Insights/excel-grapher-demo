@@ -46,15 +46,15 @@
   <div id="err" style="display:none;"></div>
   <script type="application/json" id="figure1-data">{{ figure_data_json | safe }}</script>
   <script type="application/json" id="figure1-meta">{{ cache_meta_json | safe }}</script>
-  <div class="gdp-controls" id="gdp-controls" aria-hidden="false">
-    <label id="gdp-label" for="gdp-bps">{{ gdp_label }}</label>
+  <div class="gdp-controls" id="gdp-controls" aria-hidden="false" data-shock-unit="{{ gdp_shock_unit }}">
+    <label id="gdp-label" for="gdp-shock">{{ gdp_label }}</label>
     <input
       type="range"
-      id="gdp-bps"
-      name="bps"
-      min="{{ gdp_bps_min }}"
-      max="{{ gdp_bps_max }}"
-      step="1"
+      id="gdp-shock"
+      name="gdp_shock"
+      min="{{ gdp_shock_min }}"
+      max="{{ gdp_shock_max }}"
+      step="{{ gdp_shock_step }}"
       value="0"
     />
     <span id="gdp-readout"></span>
@@ -64,8 +64,10 @@
     (function () {
       const dataEl = document.getElementById("figure1-data");
       const metaEl = document.getElementById("figure1-meta");
-      const range = document.getElementById("gdp-bps");
+      const range = document.getElementById("gdp-shock");
       const readout = document.getElementById("gdp-readout");
+      const controls = document.getElementById("gdp-controls");
+      const shockUnit = controls && controls.getAttribute("data-shock-unit") === "bps" ? "bps" : "pct";
       const statusEl = document.getElementById("status");
       let meta = {};
       try {
@@ -75,24 +77,34 @@
         statusEl.textContent = "Loaded cache: " + meta.cache_path;
       }
 
-      function setBps(bps) {
-        const n = parseInt(bps, 10);
+      function approxEq(a, b) {
+        return Math.abs(a - b) < 1e-5;
+      }
+
+      function setShock(raw) {
+        const n = parseFloat(raw);
         if (!Number.isFinite(n)) return;
         document.querySelectorAll("svg.figure-panel").forEach(function (svg) {
           svg.querySelectorAll("g.shock-layer").forEach(function (g) {
-            const gb = g.getAttribute("data-bps");
-            if (gb === String(n)) g.removeAttribute("hidden");
+            const ga = g.getAttribute("data-pct");
+            const gv = parseFloat(ga);
+            if (Number.isFinite(gv) && approxEq(gv, n)) g.removeAttribute("hidden");
             else g.setAttribute("hidden", "");
           });
         });
-        const rel = n * 1e-4;
-        readout.textContent = n + " bps (baseline * (1 + " + rel.toFixed(4) + "))";
+        if (shockUnit === "bps") {
+          const rel = n * 1e-4;
+          readout.textContent = n + " bps (baseline × (1 + " + rel.toFixed(4) + "))";
+        } else {
+          const f = n >= 0 ? "+" + n : String(n);
+          readout.textContent = f + "% (baseline × (1 + " + (n / 100).toFixed(4) + "))";
+        }
       }
 
       range.addEventListener("input", function () {
-        setBps(range.value);
+        setShock(range.value);
       });
-      setBps(range.value);
+      setShock(range.value);
     })();
   </script>
   {% endif %}

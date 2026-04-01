@@ -9,6 +9,10 @@ import argparse
 import sys
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from lic_dsf import graph
 from lic_dsf.libreoffice import payloads_from_precache_json
 from lic_dsf.workbook_backend import (
@@ -29,16 +33,16 @@ def main() -> None:
         help=f"Source .xlsm (default: {graph.WORKBOOK_PATH}).",
     )
     ap.add_argument(
-        "--baseline-bps",
-        type=int,
-        default=0,
-        help="bps applied in the reference copy (default 0).",
+        "--baseline-pct",
+        type=float,
+        default=0.0,
+        help="GDP shock in %% for the reference copy (default 0).",
     )
     ap.add_argument(
-        "--shock-bps",
-        type=int,
-        default=10,
-        help="bps applied in the comparison copy (default 10).",
+        "--shock-pct",
+        type=float,
+        default=1.0,
+        help="GDP shock in %% for the comparison copy (default 1).",
     )
     ap.add_argument(
         "--backend",
@@ -84,15 +88,15 @@ def main() -> None:
             raise SystemExit(f"Precache JSON not found: {p}")
         py_base, py_shock = payloads_from_precache_json(
             p,
-            baseline_bps=args.baseline_bps,
-            shock_bps=args.shock_bps,
+            baseline_pct=args.baseline_pct,
+            shock_pct=args.shock_pct,
         )
 
     result = run_workbook_gdp_shock_check(
         args.workbook,
         backend=resolve_backend(args.backend),
-        baseline_bps=args.baseline_bps,
-        shock_bps=args.shock_bps,
+        baseline_pct=args.baseline_pct,
+        shock_pct=args.shock_pct,
         timeout_s=args.timeout,
         soffice=args.soffice,
         keep_temps=args.keep_temps,

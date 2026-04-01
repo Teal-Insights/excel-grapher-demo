@@ -11,14 +11,34 @@ def load_shock_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def payloads_by_bps(cache_doc: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    out: dict[int, dict[str, Any]] = {}
+def _norm_pct(v: Any) -> float:
+    return round(float(v), 6)
+
+
+def payloads_by_shock(cache_doc: dict[str, Any]) -> dict[float, dict[str, Any]]:
+    """
+    Map shock level -> Figure 1 payload. New caches use ``pct`` (percent);
+    schema 1 used integer ``bps`` (basis points).
+    """
+    out: dict[float, dict[str, Any]] = {}
     default = cache_doc.get("default")
-    if isinstance(default, dict) and "bps" in default and "payload" in default:
-        out[int(default["bps"])] = default["payload"]  # type: ignore[arg-type]
+    if isinstance(default, dict) and "payload" in default:
+        pl = default["payload"]
+        if isinstance(pl, dict):
+            if "pct" in default:
+                out[_norm_pct(default["pct"])] = pl
+            elif "bps" in default:
+                out[float(int(default["bps"]))] = pl
     for entry in cache_doc.get("shocks") or []:
-        if isinstance(entry, dict) and "bps" in entry and "payload" in entry:
-            out[int(entry["bps"])] = entry["payload"]  # type: ignore[arg-type]
+        if not isinstance(entry, dict) or "payload" not in entry:
+            continue
+        pl = entry["payload"]
+        if not isinstance(pl, dict):
+            continue
+        if "pct" in entry:
+            out[_norm_pct(entry["pct"])] = pl
+        elif "bps" in entry:
+            out[float(int(entry["bps"]))] = pl
     return out
 
 
@@ -182,15 +202,15 @@ def _render_panel_group(
 
 def build_chart_html(cache_doc: dict[str, Any]) -> str:
     """
-    One <svg> per panel; each contains a <g class="shock-layer" data-bps="…"> per shock.
-    Default bps (0) is unhidden; others use the HTML hidden attribute.
+    One <svg> per panel; each contains a <g class="shock-layer" data-pct="…"> per shock.
+    Default shock 0 is unhidden; others use the HTML hidden attribute.
     """
-    by_bps = payloads_by_bps(cache_doc)
-    if not by_bps:
+    by_shock = payloads_by_shock(cache_doc)
+    if not by_shock:
         return '<p class="err">Cache has no chart entries.</p>'
 
-    bps_list = sorted(by_bps.keys())
-    ref0 = by_bps.get(0) or by_bps[bps_list[0]]
+    shock_list = sorted(by_shock.keys())
+    ref0 = by_shock.get(0.0) or by_shock[shock_list[0]]
     categories0 = list(ref0.get("categories") or [])
     panels0 = list(ref0.get("panels") or [])
 
@@ -206,8 +226,8 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
             f'viewBox="0 0 520 260" class="figure-panel" role="group" '
             f'aria-label="{title_esc}">'
         )
-        for bps in bps_list:
-            payload = by_bps[bps]
+        for shock in shock_list:
+            payload = by_shock[shock]
             panels = list(payload.get("panels") or [])
             if panel_idx >= len(panels):
                 continue
@@ -215,8 +235,9 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
             series = list(panel.get("series") or [])
             categories = list(payload.get("categories") or [])
             use_categories = categories0 if len(categories) == len(categories0) else categories
-            hidden_attr = "" if bps == 0 else " hidden"
-            chunks.append(f'<g class="shock-layer" data-bps="{bps}"{hidden_attr}>')
+            hidden_attr = "" if abs(shock) < 1e-9 else " hidden"
+            pct_attr = f"{shock:g}"
+            chunks.append(f'<g class="shock-layer" data-pct="{pct_attr}"{hidden_attr}>')
             chunks.append(
                 _render_panel_group(
                     title=title,
@@ -231,11 +252,26 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
 
 
 def slim_chart_json_for_browser(cache_doc: dict[str, Any]) -> dict[str, Any]:
-    by_bps = payloads_by_bps(cache_doc)
-    bps_sorted = sorted(by_bps.keys())
-    return {
+    by_shock = payloads_by_shock(cache_doc)
+    shock_sorted = sorted(by_shock.keys())
+    is_pct = cache_doc.get("pct_min") is not None
+    entries: list[dict[str, Any]] = []
+    for s in shock_sorted:
+        row: dict[str, Any] = {"payload": by_shock[s]}
+        if is_pct:
+            row["pct"] = s
+        else:
+            row["bps"] = int(s)
+        entries.append(row)
+    slim: dict[str, Any] = {
         "schema": cache_doc.get("schema"),
-        "bps_min": cache_doc.get("bps_min"),
-        "bps_max": cache_doc.get("bps_max"),
-        "entries": [{"bps": bps, "payload": by_bps[bps]} for bps in bps_sorted],
+        "entries": entries,
     }
+    if "pct_min" in cache_doc:
+        slim["pct_min"] = cache_doc.get("pct_min")
+        slim["pct_max"] = cache_doc.get("pct_max")
+        slim["pct_step"] = cache_doc.get("pct_step")
+    if "bps_min" in cache_doc:
+        slim["bps_min"] = cache_doc.get("bps_min")
+        slim["bps_max"] = cache_doc.get("bps_max")
+    return slim

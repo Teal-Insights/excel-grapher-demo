@@ -9,6 +9,7 @@ from typing import Any, Literal
 from .libreoffice import (
     _compare_maps_python_minus_lo,
     _compare_shock_increment_python_minus_lo,
+    _norm_pct,
     diff_chart_maps,
     find_soffice,
     figure1_payload_to_chart_map,
@@ -35,7 +36,7 @@ def resolve_backend(name: str) -> BackendName:
             return "libreoffice"
         raise RuntimeError(
             "backend=auto is only supported on Windows and Linux in this script. "
-            "Choose --backend libreoffice or --backend xlwings explicitly."
+            "Choose --sanity-check-backend libreoffice or --sanity-check-backend xlwings explicitly."
         )
     if name == "libreoffice":
         return "libreoffice"
@@ -80,7 +81,7 @@ def _recalculate_with_xlwings(workbook: Path) -> None:
         import xlwings as xw
     except ImportError as exc:
         raise RuntimeError(
-            "xlwings is required for --backend xlwings but is not installed. "
+            "xlwings is required for sanity-check-backend=xlwings but is not installed. "
             "Install it in this environment and retry."
         ) from exc
 
@@ -108,7 +109,7 @@ def _recalculate_with_xlwings(workbook: Path) -> None:
 def recalculate_figure1_payload(
     workbook: Path,
     *,
-    bps: int,
+    pct: float,
     backend: BackendName,
     timeout_s: int = 600,
     soffice: str | None = None,
@@ -122,14 +123,15 @@ def recalculate_figure1_payload(
     tmp = tmpdir or Path(tempfile.mkdtemp(prefix=f"{backend}-gdp-shock-"))
     try:
         targets = load_gdp_input_targets(src)
-        shocked_xlsm = tmp / f"{src.stem}_{backend}_{bps}bps.xlsm"
-        write_shocked_xlsm(src, shocked_xlsm, targets, bps)
+        p = _norm_pct(pct)
+        shocked_xlsm = tmp / f"{src.stem}_{backend}_{p}pct.xlsm"
+        write_shocked_xlsm(src, shocked_xlsm, targets, pct)
 
         if backend == "libreoffice":
             bin_soffice = find_soffice(soffice)
             if not bin_soffice:
                 raise RuntimeError(
-                    "LibreOffice not found (try --backend-soffice or PATH: soffice, libreoffice)."
+                    "LibreOffice not found (try --lo-soffice or PATH: soffice, libreoffice)."
                 )
             recalculated = libreoffice_to_xlsx(
                 shocked_xlsm,
@@ -151,8 +153,8 @@ def run_workbook_gdp_shock_check(
     workbook: Path,
     *,
     backend: BackendName,
-    baseline_bps: int = 0,
-    shock_bps: int = 10,
+    baseline_pct: float = 0.0,
+    shock_pct: float = 1.0,
     timeout_s: int = 600,
     soffice: str | None = None,
     keep_temps: bool = False,
@@ -167,9 +169,10 @@ def run_workbook_gdp_shock_check(
     tmp = Path(tempfile.mkdtemp(prefix=f"{backend}-gdp-check-"))
     try:
         targets = load_gdp_input_targets(src)
+        b0, b1 = _norm_pct(baseline_pct), _norm_pct(shock_pct)
         base_payload = recalculate_figure1_payload(
             src,
-            bps=baseline_bps,
+            pct=baseline_pct,
             backend=backend,
             timeout_s=timeout_s,
             soffice=soffice,
@@ -178,7 +181,7 @@ def run_workbook_gdp_shock_check(
         )
         shock_payload = recalculate_figure1_payload(
             src,
-            bps=shock_bps,
+            pct=shock_pct,
             backend=backend,
             timeout_s=timeout_s,
             soffice=soffice,
@@ -216,8 +219,8 @@ def run_workbook_gdp_shock_check(
         out: dict[str, Any] = {
             "ok": True,
             "backend": backend,
-            "baseline_bps": baseline_bps,
-            "shock_bps": shock_bps,
+            "baseline_pct": b0,
+            "shock_pct": b1,
             "gdp_input_cells": len(targets),
             "output_cells_compared": len(rows),
             "backend_internal": {
@@ -242,10 +245,10 @@ def run_workbook_gdp_shock_check(
                         "FormulaEvaluator payload vs workbook recalc payload "
                         f"(same cell keys); errors are python - {backend}"
                     ),
-                    f"at_{baseline_bps}_bps": _compare_maps_python_minus_lo(
+                    f"at_{b0:g}_pct": _compare_maps_python_minus_lo(
                         py_b, vb, top_n=top_n
                     ),
-                    f"at_{shock_bps}_bps": _compare_maps_python_minus_lo(
+                    f"at_{b1:g}_pct": _compare_maps_python_minus_lo(
                         py_s, vs, top_n=top_n
                     ),
                     "shock_increment": _compare_shock_increment_python_minus_lo(
@@ -281,7 +284,7 @@ def print_check_report(result: dict[str, Any]) -> None:
     print(f"Workbook sanity check ({backend}): {detail}")
     print(f"  GDP forecast input cells: {result['gdp_input_cells']}")
     print(
-        f"  Internal: {result['baseline_bps']} bps vs {result['shock_bps']} bps "
+        f"  Internal: {result['baseline_pct']}% vs {result['shock_pct']}% "
         f"(recalc delta under {backend} only)"
     )
     print(f"  Output cells compared: {result['output_cells_compared']}")

@@ -24,6 +24,8 @@ The cache generator uses `FormulaEvaluator` as the real calculation backend. Wor
 - `--sanity-check-backend xlwings` forces Excel via `xlwings` on Windows.
 - `xlwings` is optional and only needed when you use the xlwings sanity-check backend.
 
+Precache schema v2 stores GDP shocks as **percent** (not basis points): default **0%**, and one entry per step from **-5%** to **+5%** in **0.5%** increments (`lic_dsf.payload.GDP_SHOCK_PCT_*`).
+
 Common options:
 
 | Flag | Purpose |
@@ -36,6 +38,8 @@ Common options:
 | `--sanity-check-backend auto\|libreoffice\|xlwings` | Select the workbook engine used for sanity checking |
 | `--lo-soffice PATH` | Explicit LibreOffice binary for sanity checks |
 | `--lo-timeout N` | LibreOffice sanity-check timeout in seconds |
+| `--lo-baseline-pct N` | Sanity check reference shock in % (default 0) |
+| `--lo-shock-pct N` | Sanity check comparison shock in % (default 1) |
 
 The web app’s default cache path is `.cache/gdp-shocks.json` unless you override it (see below).
 

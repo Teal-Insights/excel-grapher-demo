@@ -1,10 +1,10 @@
 """
 LibreOffice headless recalc sanity check for GDP forecast shocks.
 
-Edits the workbook copy with ``gdp_forecast_value_from_bps``, converts via
+Edits the workbook copy with ``gdp_forecast_value_from_percent``, converts via
 ``soffice --headless --convert-to xlsx``, reads Figure 1 Chart Data cells, and
 optionally compares those values to a Python ``FormulaEvaluator`` payload
-(``build_figure1_payload`` / precache JSON) for the same bps levels.
+(``build_figure1_payload`` / precache JSON) for the same percent shock levels.
 
 ``top_deltas`` / ``max_abs_delta`` are **internal to LibreOffice** (shock minus
 baseline under LO only). When ``python_baseline_payload`` and
@@ -35,7 +35,7 @@ from .payload import (
     FIGURE1_PANELS,
     _read_gdp_forecast_cell_values_from_workbook,
     col_letters,
-    gdp_forecast_value_from_bps,
+    gdp_forecast_value_from_percent,
 )
 
 
@@ -83,13 +83,13 @@ def write_shocked_xlsm(
     src: Path,
     dst: Path,
     targets: list[tuple[str, str, float]],
-    bps: int,
+    pct: float,
 ) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     wb = openpyxl.load_workbook(dst, keep_vba=True)
     for sheet, a1, base in targets:
-        wb[sheet][a1] = gdp_forecast_value_from_bps(base, bps)
+        wb[sheet][a1] = gdp_forecast_value_from_percent(base, pct)
     wb.save(dst)
 
 
@@ -155,33 +155,40 @@ def read_figure1_chart_values(xlsx: Path) -> dict[str, float | None]:
     return out
 
 
-def payload_for_bps_from_precache_doc(doc: dict[str, Any], bps: int) -> dict[str, Any]:
-    """Return Figure 1 ``payload`` from a ``figure1-gdp-shocks.json``-style document."""
+def _norm_pct(v: Any) -> float:
+    return round(float(v), 6)
+
+
+def payload_for_pct_from_precache_doc(doc: dict[str, Any], pct: float) -> dict[str, Any]:
+    """Return Figure 1 ``payload`` from a precache JSON document (``pct`` shock key)."""
+    target = _norm_pct(pct)
     default = doc.get("default")
-    if isinstance(default, dict) and int(default.get("bps", 0)) == bps:
+    if isinstance(default, dict):
         pl = default.get("payload")
-        if isinstance(pl, dict):
-            return pl
+        if isinstance(pl, dict) and "pct" in default:
+            if _norm_pct(default["pct"]) == target:
+                return pl
     for e in doc.get("shocks") or []:
         if not isinstance(e, dict):
             continue
-        if int(e.get("bps", -999999)) == bps:
-            pl = e.get("payload")
-            if isinstance(pl, dict):
-                return pl
-    raise ValueError(f"No precache entry for bps={bps}")
+        pl = e.get("payload")
+        if not isinstance(pl, dict) or "pct" not in e:
+            continue
+        if _norm_pct(e["pct"]) == target:
+            return pl
+    raise ValueError(f"No precache entry for pct={pct}")
 
 
 def payloads_from_precache_json(
     path: Path,
     *,
-    baseline_bps: int,
-    shock_bps: int,
+    baseline_pct: float,
+    shock_pct: float,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     doc = json.loads(path.read_text(encoding="utf-8"))
     return (
-        payload_for_bps_from_precache_doc(doc, baseline_bps),
-        payload_for_bps_from_precache_doc(doc, shock_bps),
+        payload_for_pct_from_precache_doc(doc, baseline_pct),
+        payload_for_pct_from_precache_doc(doc, shock_pct),
     )
 
 
@@ -317,8 +324,8 @@ def diff_chart_maps(
 def run_libreoffice_gdp_shock_check(
     workbook: Path,
     *,
-    baseline_bps: int = 0,
-    shock_bps: int = 10,
+    baseline_pct: float = 0.0,
+    shock_pct: float = 1.0,
     timeout_s: int = 600,
     soffice: str | None = None,
     keep_temps: bool = False,
@@ -334,7 +341,7 @@ def run_libreoffice_gdp_shock_check(
     ``python_vs_libreoffice`` with baseline-level, shock-level, and incremental
     agreement stats (Python minus LibreOffice).
 
-    Returns a JSON-serializable dict with keys: ok, baseline_bps, shock_bps,
+    Returns a JSON-serializable dict with keys: ok, baseline_pct, shock_pct,
     soffice, gdp_input_cells, output_cells_compared, max_abs_delta, mean_abs_delta,
     top_deltas (LO-only), python_vs_libreoffice (optional), temp_dir, error.
     """
@@ -355,11 +362,12 @@ def run_libreoffice_gdp_shock_check(
     tmp = Path(tempfile.mkdtemp(prefix="lo-gdp-shock-"))
     try:
         targets = load_gdp_input_targets(src)
-        base_xlsm = tmp / f"{src.stem}_baseline_{baseline_bps}bps.xlsm"
-        shock_xlsm = tmp / f"{src.stem}_shock_{shock_bps}bps.xlsm"
+        b0, b1 = _norm_pct(baseline_pct), _norm_pct(shock_pct)
+        base_xlsm = tmp / f"{src.stem}_baseline_{b0}pct.xlsm"
+        shock_xlsm = tmp / f"{src.stem}_shock_{b1}pct.xlsm"
 
-        write_shocked_xlsm(src, base_xlsm, targets, baseline_bps)
-        write_shocked_xlsm(src, shock_xlsm, targets, shock_bps)
+        write_shocked_xlsm(src, base_xlsm, targets, baseline_pct)
+        write_shocked_xlsm(src, shock_xlsm, targets, shock_pct)
 
         base_xlsx = libreoffice_to_xlsx(
             base_xlsm, tmp, soffice=bin_soffice, timeout_s=timeout_s
@@ -411,8 +419,8 @@ def run_libreoffice_gdp_shock_check(
 
         out: dict[str, Any] = {
             "ok": True,
-            "baseline_bps": baseline_bps,
-            "shock_bps": shock_bps,
+            "baseline_pct": b0,
+            "shock_pct": b1,
             "soffice": bin_soffice,
             "gdp_input_cells": len(targets),
             "output_cells_compared": len(rows),
@@ -436,10 +444,10 @@ def run_libreoffice_gdp_shock_check(
                         "FormulaEvaluator payload vs LibreOffice xlsx (same cell keys); "
                         "errors are python - libreoffice"
                     ),
-                    f"at_{baseline_bps}_bps": _compare_maps_python_minus_lo(
+                    f"at_{b0:g}_pct": _compare_maps_python_minus_lo(
                         py_b, vb, top_n=top_n
                     ),
-                    f"at_{shock_bps}_bps": _compare_maps_python_minus_lo(
+                    f"at_{b1:g}_pct": _compare_maps_python_minus_lo(
                         py_s, vs, top_n=top_n
                     ),
                     "shock_increment": _compare_shock_increment_python_minus_lo(
@@ -483,7 +491,7 @@ def print_check_report(result: dict[str, Any]) -> None:
     print(f"LibreOffice check: {result['soffice']}")
     print(f"  GDP forecast input cells: {result['gdp_input_cells']}")
     print(
-        f"  LO internal: {result['baseline_bps']} bps vs {result['shock_bps']} bps "
+        f"  LO internal: {result['baseline_pct']}% vs {result['shock_pct']}% "
         "(recalc delta under LibreOffice only)"
     )
     print(f"  Output cells compared: {result['output_cells_compared']}")

@@ -22,7 +22,11 @@ from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from lic_dsf.payload import GDP_SHOCK_BPS_MAX, GDP_SHOCK_BPS_MIN
+from lic_dsf.payload import (
+    GDP_SHOCK_PCT_MAX,
+    GDP_SHOCK_PCT_MIN,
+    GDP_SHOCK_PCT_STEP,
+)
 from web.charts import build_chart_html, load_shock_json, slim_chart_json_for_browser
 
 _ROOT = Path(__file__).resolve().parent
@@ -102,22 +106,47 @@ def index() -> str:
             error_text=err,
             charts_html="",
             figure_data_json="null",
-            gdp_label="GDP forecast (baseline * (1 + bps*1e-4), +/-10 bps)",
-            gdp_bps_min=GDP_SHOCK_BPS_MIN,
-            gdp_bps_max=GDP_SHOCK_BPS_MAX,
+            gdp_label=(
+                "GDP forecast shock (baseline × (1 + %/100), "
+                f"{GDP_SHOCK_PCT_MIN:g}% to {GDP_SHOCK_PCT_MAX:g}%)"
+            ),
+            gdp_shock_min=GDP_SHOCK_PCT_MIN,
+            gdp_shock_max=GDP_SHOCK_PCT_MAX,
+            gdp_shock_step=GDP_SHOCK_PCT_STEP,
+            gdp_shock_unit="pct",
             cache_meta_json=_json_for_script_tag(getattr(app.state, "figure_meta", {})),
         )
 
     slim = getattr(app.state, "figure_data_slim", {})
+    if slim.get("pct_min") is not None:
+        shock_min = float(slim["pct_min"])
+        shock_max = float(slim["pct_max"])
+        shock_step = float(slim["pct_step"])
+        shock_unit = "pct"
+        gdp_label = (
+            "GDP forecast shock (baseline × (1 + %/100), "
+            f"{shock_min:g}% to {shock_max:g}%)"
+        )
+    else:
+        shock_min = float(slim.get("bps_min", -10))
+        shock_max = float(slim.get("bps_max", 10))
+        shock_step = 1.0
+        shock_unit = "bps"
+        gdp_label = (
+            f"GDP forecast (legacy cache: baseline × (1 + bps×10⁻⁴), "
+            f"{int(shock_min)} to {int(shock_max)} bps)"
+        )
     return _jinja_env.get_template("layout.html").render(
         page_title="Figure 1 — External stress",
         ok=True,
         error_text="",
         charts_html=getattr(app.state, "figure_charts_html", ""),
         figure_data_json=_json_for_script_tag(slim),
-        gdp_label="GDP forecast (baseline * (1 + bps*1e-4), +/-10 bps)",
-        gdp_bps_min=int(slim.get("bps_min") or GDP_SHOCK_BPS_MIN),
-        gdp_bps_max=int(slim.get("bps_max") or GDP_SHOCK_BPS_MAX),
+        gdp_label=gdp_label,
+        gdp_shock_min=shock_min,
+        gdp_shock_max=shock_max,
+        gdp_shock_step=shock_step,
+        gdp_shock_unit=shock_unit,
         cache_meta_json=_json_for_script_tag(getattr(app.state, "figure_meta", {})),
     )
 

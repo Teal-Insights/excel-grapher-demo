@@ -18,12 +18,13 @@ CHART_SHEET = "Chart Data"
 YEAR_ROW = 35
 
 # Baseline GDP forecast inputs, forecasts start at column X.
-# Slider applies relative bps: new = baseline + baseline * (bps * 1e-4) = baseline * (1 + bps * 1e-4).
+# Slider applies multiplicative percent: new = baseline * (1 + pct/100), e.g. pct=0.5 -> +0.5%.
 GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
 GDP_FORECAST_ROWS = (12,)
 GDP_FORECAST_START_COL = "X"
-GDP_SHOCK_BPS_MIN = -10
-GDP_SHOCK_BPS_MAX = 10
+GDP_SHOCK_PCT_MIN = -5.0
+GDP_SHOCK_PCT_MAX = 5.0
+GDP_SHOCK_PCT_STEP = 0.5
 
 # Columns D:N (11 points), matching the workbook charts.
 _VALUE_COL_INDICES = range(4, 15)
@@ -217,8 +218,16 @@ def gdp_forecast_baselines(
     return [float(v) if v is not None else 0.0 for v in out]
 
 
-def gdp_forecast_value_from_bps(baseline: float, bps: int) -> float:
-    return baseline + baseline * (bps * 1e-4)
+def gdp_shock_percent_levels() -> tuple[float, ...]:
+    lo, hi, step = GDP_SHOCK_PCT_MIN, GDP_SHOCK_PCT_MAX, GDP_SHOCK_PCT_STEP
+    if step <= 0:
+        raise ValueError("GDP_SHOCK_PCT_STEP must be positive")
+    n = int(round((hi - lo) / step))
+    return tuple(round(lo + i * step, 6) for i in range(n + 1))
+
+
+def gdp_forecast_value_from_percent(baseline: float, pct: float) -> float:
+    return baseline * (1.0 + pct / 100.0)
 
 
 def cell_key(col: str, row: int) -> str:

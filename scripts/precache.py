@@ -2,16 +2,19 @@
 """
 Precompute chart outputs for the GDP forecast shock slider.
 
-This script evaluates the chart payload once at the default (0 bps), plus all non-zero
-shock settings from GDP_SHOCK_BPS_MIN..GDP_SHOCK_BPS_MAX (forecast cells set to
-baseline + baseline * (bps * 1e-4)), and writes the results to a JSON file for
-fast, pre-cached loading in the webapp.
+This script evaluates the chart payload once at the default (0% shock), plus every
+other level from GDP_SHOCK_PCT_MIN..GDP_SHOCK_PCT_MAX in GDP_SHOCK_PCT_STEP increments
+(forecast cells set to baseline * (1 + pct/100)), and writes the results to JSON for
+the webapp slider.
 
 Run:
   uv run python scripts/precache.py
   uv run python scripts/precache.py --workbook lic-dsf-template-2025-08-12.xlsm
   uv run python scripts/precache.py --sanity-check-backend auto
   uv run python scripts/precache.py --sanity-check
+
+From the repo root, ``lic_dsf`` is on ``sys.path`` automatically; you can still set
+``PYTHONPATH=.`` if you prefer.
 """
 
 from __future__ import annotations
@@ -24,23 +27,33 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from excel_grapher import DependencyGraph, DynamicRefError, FormulaEvaluator, create_dependency_graph
 
 from lic_dsf import graph as lic_graph
 from lic_dsf.payload import (
-    GDP_SHOCK_BPS_MAX,
-    GDP_SHOCK_BPS_MIN,
+    GDP_SHOCK_PCT_MAX,
+    GDP_SHOCK_PCT_MIN,
+    GDP_SHOCK_PCT_STEP,
     build_figure1_payload,
     gdp_forecast_baselines,
     gdp_forecast_cell_keys,
-    gdp_forecast_value_from_bps,
+    gdp_forecast_value_from_percent,
+    gdp_shock_percent_levels,
 )
 from lic_dsf.workbook_backend import resolve_backend
 
 
+def _norm_pct(pct: float) -> float:
+    return round(float(pct), 6)
+
+
 @dataclass(frozen=True, slots=True)
 class CacheEntry:
-    bps: int
+    pct: float
     payload: dict[str, Any]
 
 
@@ -127,41 +140,42 @@ def _compute_formula_evaluator_entries(
         iterate_delta=settings.iterate_delta,
     )
 
-    def eval_at_bps(bps: int) -> CacheEntry:
+    def eval_at_pct(pct: float) -> CacheEntry:
         for k, base in zip(keys, baselines, strict=True):
-            ev.set_value(k, gdp_forecast_value_from_bps(float(base), bps))
+            ev.set_value(k, gdp_forecast_value_from_percent(float(base), pct))
         payload = build_figure1_payload(
             graph,
             workbook_path=lic_graph.WORKBOOK_PATH,
             evaluator=ev,
         )
-        return CacheEntry(bps=bps, payload=payload)
+        return CacheEntry(pct=pct, payload=payload)
 
-    default_entry = eval_at_bps(0)
+    default_entry = eval_at_pct(0.0)
 
     shocks: list[CacheEntry] = []
-    for bps in range(GDP_SHOCK_BPS_MIN, GDP_SHOCK_BPS_MAX + 1):
-        if bps == 0:
+    for pct in gdp_shock_percent_levels():
+        if abs(pct) < 1e-9:
             continue
-        shocks.append(eval_at_bps(int(bps)))
+        shocks.append(eval_at_pct(pct))
 
     return default_entry, shocks
 
 
 def _entry_to_json(e: CacheEntry) -> dict[str, Any]:
-    return {"bps": e.bps, "payload": e.payload}
+    return {"pct": e.pct, "payload": e.payload}
 
 
-def _cache_entry_for_bps(
-    default_entry: CacheEntry, shocks: list[CacheEntry], bps: int
+def _cache_entry_for_pct(
+    default_entry: CacheEntry, shocks: list[CacheEntry], pct: float
 ) -> CacheEntry:
-    if bps == 0:
+    target = _norm_pct(pct)
+    if abs(target) < 1e-9:
         return default_entry
     for e in shocks:
-        if e.bps == bps:
+        if _norm_pct(e.pct) == target:
             return e
     raise SystemExit(
-        f"No precache entry for bps={bps} (expected one of 0 or GDP_SHOCK_BPS_MIN..MAX)."
+        f"No precache entry for pct={pct} (expected one of the GDP shock percent levels)."
     )
 
 
@@ -200,16 +214,16 @@ def main() -> None:
         help="Sanity-check engine: auto picks xlwings on Windows and LibreOffice on Linux.",
     )
     ap.add_argument(
-        "--lo-baseline-bps",
-        type=int,
-        default=0,
-        help="LibreOffice check: reference copy bps (default 0).",
+        "--lo-baseline-pct",
+        type=float,
+        default=0.0,
+        help="Sanity check: reference copy GDP shock in %% (default 0).",
     )
     ap.add_argument(
-        "--lo-shock-bps",
-        type=int,
-        default=10,
-        help="LibreOffice check: comparison copy bps (default 10).",
+        "--lo-shock-pct",
+        type=float,
+        default=1.0,
+        help="Sanity check: comparison copy GDP shock in %% (default 1).",
     )
     ap.add_argument(
         "--lo-timeout",
@@ -239,7 +253,7 @@ def main() -> None:
         type=float,
         default=None,
         metavar="EPS",
-        help="If set, exit 1 when max|Python-backend| at --lo-shock-bps exceeds EPS.",
+        help="If set, exit 1 when max|Python-backend| at --lo-shock-pct exceeds EPS.",
     )
     args = ap.parse_args()
     lic_graph.WORKBOOK_PATH = args.workbook.resolve()
@@ -252,12 +266,13 @@ def main() -> None:
 
     cache_path = lic_graph._default_graph_cache_path(lic_graph.WORKBOOK_PATH)
     payload: dict[str, Any] = {
-        "schema": 1,
+        "schema": 2,
         "generated_at_unix_s": time.time(),
         "workbook_path": str(lic_graph.WORKBOOK_PATH),
         "graph_cache_path": str(cache_path),
-        "bps_min": GDP_SHOCK_BPS_MIN,
-        "bps_max": GDP_SHOCK_BPS_MAX,
+        "pct_min": GDP_SHOCK_PCT_MIN,
+        "pct_max": GDP_SHOCK_PCT_MAX,
+        "pct_step": GDP_SHOCK_PCT_STEP,
         "default": _entry_to_json(default_entry),
         "shocks": [_entry_to_json(e) for e in shocks],
         "timing_s": {
@@ -273,11 +288,11 @@ def main() -> None:
             run_workbook_gdp_shock_check,
         )
 
-        base_e = _cache_entry_for_bps(
-            default_entry, shocks, int(args.lo_baseline_bps)
+        base_e = _cache_entry_for_pct(
+            default_entry, shocks, float(args.lo_baseline_pct)
         )
-        shock_e = _cache_entry_for_bps(
-            default_entry, shocks, int(args.lo_shock_bps)
+        shock_e = _cache_entry_for_pct(
+            default_entry, shocks, float(args.lo_shock_pct)
         )
 
         t_lo0 = time.perf_counter()
@@ -285,8 +300,8 @@ def main() -> None:
         lo_result = run_workbook_gdp_shock_check(
             lic_graph.WORKBOOK_PATH,
             backend=check_backend,
-            baseline_bps=int(args.lo_baseline_bps),
-            shock_bps=int(args.lo_shock_bps),
+            baseline_pct=float(args.lo_baseline_pct),
+            shock_pct=float(args.lo_shock_pct),
             timeout_s=int(args.lo_timeout),
             soffice=args.lo_soffice,
             keep_temps=bool(args.lo_keep_temps),
@@ -304,7 +319,7 @@ def main() -> None:
         if args.lo_python_tolerance is not None and lo_result.get("ok"):
             pvs = lo_result.get("python_vs_backend")
             if isinstance(pvs, dict):
-                sk = f"at_{int(args.lo_shock_bps)}_bps"
+                sk = f"at_{_norm_pct(float(args.lo_shock_pct)):g}_pct"
                 block = pvs.get(sk)
                 if isinstance(block, dict):
                     mx = block.get("max_abs_error")
