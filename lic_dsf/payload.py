@@ -42,6 +42,7 @@ class SeriesSpec:
     legend: str
     color: str
     dash: list[int]
+    focal: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,65 +57,69 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
     PanelSpec(
         title="PV of debt-to-GDP ratio",
         series=(
-            SeriesSpec(61, "Baseline", "#4b82ad", []),
-            SeriesSpec(62, "Historical scenario", "#ff0000", [10, 5]),
-            SeriesSpec(63, "MX shock Standard&Tailored", "#000000", []),
+            SeriesSpec(61, "Baseline", "#4b82ad", [], True),
+            SeriesSpec(62, "Historical scenario", "#ff0000", [10, 5], True),
+            SeriesSpec(63, "MX shock Standard&Tailored", "#000000", [], True),
             SeriesSpec(
                 64,
                 "MX value, 1 yr only shock Standard&Tailored - for chart",
                 "#e46c0a",
                 [],
+                False,
             ),
-            SeriesSpec(66, "Threshold", "#339966", [6, 4]),
-            SeriesSpec(51, "Risk band", "#00ff00", []),
+            SeriesSpec(66, "Threshold", "#339966", [6, 4], True),
+            SeriesSpec(51, "Risk band", "#00ff00", [], False),
         ),
     ),
     PanelSpec(
         title="PV of debt-to-revenue ratio",
         series=(
-            SeriesSpec(103, "Baseline", "#4b82ad", []),
-            SeriesSpec(104, "Historical scenario", "#ff0000", [10, 5]),
-            SeriesSpec(105, "MX shock Standard&Tailored", "#000000", []),
+            SeriesSpec(103, "Baseline", "#4b82ad", [], True),
+            SeriesSpec(104, "Historical scenario", "#ff0000", [10, 5], True),
+            SeriesSpec(105, "MX shock Standard&Tailored", "#000000", [], True),
             SeriesSpec(
                 106,
                 "MX value, 1 yr only shock Standard&Tailored - for chart",
                 "#f79646",
                 [],
+                False,
             ),
-            SeriesSpec(108, "Threshold", "#339966", [6, 4]),
-            SeriesSpec(93, "Risk band", "#00ff00", []),
+            SeriesSpec(108, "Threshold", "#339966", [6, 4], True),
+            SeriesSpec(93, "Risk band", "#00ff00", [], False),
         ),
     ),
     PanelSpec(
         title="Debt service-to-revenue ratio",
         series=(
-            SeriesSpec(145, "Baseline", "#4b82ad", []),
-            SeriesSpec(146, "Historical scenario", "#ff0000", [10, 5]),
-            SeriesSpec(147, "MX shock Standard&Tailored", "#000000", []),
+            SeriesSpec(145, "Baseline", "#4b82ad", [], True),
+            SeriesSpec(146, "Historical scenario", "#ff0000", [10, 5], True),
+            SeriesSpec(147, "MX shock Standard&Tailored", "#000000", [], True),
             SeriesSpec(
                 148,
                 "MX value, 1 yr only shock Standard&Tailored - for chart",
                 "#f79646",
                 [],
+                False,
             ),
-            SeriesSpec(150, "Threshold", "#339966", [6, 4]),
-            SeriesSpec(135, "Risk band", "#00ff00", []),
+            SeriesSpec(150, "Threshold", "#339966", [6, 4], True),
+            SeriesSpec(135, "Risk band", "#00ff00", [], False),
         ),
     ),
     PanelSpec(
         title="Debt service-to-GDP ratio",
         series=(
-            SeriesSpec(187, "Baseline", "#4b82ad", []),
-            SeriesSpec(188, "Historical scenario", "#ff0000", [10, 5]),
-            SeriesSpec(189, "MX shock Standard&Tailored", "#000000", []),
+            SeriesSpec(187, "Baseline", "#4b82ad", [], True),
+            SeriesSpec(188, "Historical scenario", "#ff0000", [10, 5], True),
+            SeriesSpec(189, "MX shock Standard&Tailored", "#000000", [], True),
             SeriesSpec(
                 190,
                 "MX value, 1 yr only shock Standard&Tailored - for chart",
                 "#f79646",
                 [],
+                False,
             ),
-            SeriesSpec(192, "Threshold", "#339966", [6, 4]),
-            SeriesSpec(177, "Risk band", "#00ff00", []),
+            SeriesSpec(192, "Threshold", "#339966", [6, 4], True),
+            SeriesSpec(177, "Risk band", "#00ff00", [], False),
         ),
     ),
 )

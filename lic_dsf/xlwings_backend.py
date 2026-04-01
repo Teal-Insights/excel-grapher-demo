@@ -5,7 +5,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .libreoffice import load_gdp_input_targets, write_shocked_xlsm
+from .libreoffice import load_gdp_input_targets
+from .payload import gdp_forecast_value_from_percent
 from .workbook_payload import read_figure1_payload_from_workbook
 
 
@@ -13,7 +14,24 @@ def _norm_pct(v: float) -> float:
     return round(float(v), 6)
 
 
-def _recalculate_with_xlwings(workbook: Path) -> None:
+def _write_shocked_inputs_with_xlwings(
+    book: Any,
+    *,
+    targets: list[tuple[str, str, float]],
+    pct: float,
+) -> None:
+    for sheet_name, a1, base in targets:
+        book.sheets[sheet_name].range(a1).value = gdp_forecast_value_from_percent(
+            base, pct
+        )
+
+
+def _recalculate_with_xlwings(
+    workbook: Path,
+    *,
+    targets: list[tuple[str, str, float]],
+    pct: float,
+) -> None:
     try:
         import xlwings as xw
     except ImportError as exc:
@@ -28,6 +46,7 @@ def _recalculate_with_xlwings(workbook: Path) -> None:
     try:
         book = app.books.open(str(workbook), update_links=False, read_only=False)
         try:
+            _write_shocked_inputs_with_xlwings(book, targets=targets, pct=pct)
             app.calculation = "automatic"
             api = app.api
             if hasattr(api, "CalculateFullRebuild"):
@@ -58,8 +77,8 @@ def recalculate_figure1_payload_with_xlwings(
     try:
         targets = load_gdp_input_targets(src)
         shocked_xlsm = tmp / f"{src.stem}_xlwings_{_norm_pct(pct):g}pct.xlsm"
-        write_shocked_xlsm(src, shocked_xlsm, targets, pct)
-        _recalculate_with_xlwings(shocked_xlsm)
+        shutil.copy2(src, shocked_xlsm)
+        _recalculate_with_xlwings(shocked_xlsm, targets=targets, pct=pct)
         return read_figure1_payload_from_workbook(shocked_xlsm)
     finally:
         if tmpdir is None and not keep_temps:

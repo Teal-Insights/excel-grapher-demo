@@ -27,6 +27,7 @@ def figure1_payload_from_chart_map(
                     "data": data,
                     "borderColor": spec.color,
                     "borderDash": spec.dash,
+                    "isFocal": spec.focal,
                 }
             )
         panels_out.append({"title": panel.title, "series": series_out})
