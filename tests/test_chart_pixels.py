@@ -31,12 +31,6 @@ def _sample_cache_doc() -> dict[str, object]:
             "borderColor": "#000000",
             "borderDash": [],
         },
-        {
-            "name": "MX value, 1 yr only shock Standard&Tailored - for chart",
-            "data": [4.0, 4.5, 5.0, 5.5],
-            "borderColor": "#e46c0a",
-            "borderDash": [],
-        },
         {"name": "Threshold", "data": [17.0, 17.0, 17.0, 17.0], "borderColor": "#339966", "borderDash": [6, 4]},
     ]
     shock_series = [
@@ -51,12 +45,6 @@ def _sample_cache_doc() -> dict[str, object]:
             "name": "MX shock Standard&Tailored",
             "data": [14.0, 13.0, 12.2, 11.4],
             "borderColor": "#000000",
-            "borderDash": [],
-        },
-        {
-            "name": "MX value, 1 yr only shock Standard&Tailored - for chart",
-            "data": [5.2, 5.8, 6.4, 7.0],
-            "borderColor": "#e46c0a",
             "borderDash": [],
         },
         {"name": "Threshold", "data": [18.0, 18.0, 18.0, 18.0], "borderColor": "#339966", "borderDash": [6, 4]},
@@ -128,7 +116,6 @@ class ChartPixelTests(unittest.TestCase):
                           "MX shock Standard&Tailored": [0, 0, 0],
                           "Threshold": [51, 153, 102],
                         };
-                        const nonFocalExpected = [196, 196, 196];
                         const tolerance = 40;
                         const radius = 3;
 
@@ -215,10 +202,6 @@ class ChartPixelTests(unittest.TestCase):
                           historical: sampleAlongSeries("Historical scenario", expected["Historical scenario"]),
                           mxShock: sampleAlongSeries("MX shock Standard&Tailored", expected["MX shock Standard&Tailored"]),
                           threshold: sampleAlongSeries("Threshold", expected["Threshold"]),
-                          nonFocalGray: sampleAlongSeries(
-                            "MX value, 1 yr only shock Standard&Tailored - for chart",
-                            nonFocalExpected
-                          ),
                         };
                     }"""
                 )
@@ -232,7 +215,6 @@ class ChartPixelTests(unittest.TestCase):
                 "historical": True,
                 "mxShock": True,
                 "threshold": True,
-                "nonFocalGray": True,
             },
         )
 

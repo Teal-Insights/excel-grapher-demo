@@ -71,7 +71,12 @@ _FOCAL_SERIES_NAMES = frozenset(
         "Threshold",
     }
 )
-_HIDDEN_SERIES_NAMES = frozenset({"Risk band"})
+_HIDDEN_SERIES_NAMES = frozenset(
+    {
+        "Risk band",
+        "MX value, 1 yr only shock Standard&Tailored - for chart",
+    }
+)
 
 
 def _series_name(series: dict[str, Any]) -> str:

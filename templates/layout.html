@@ -33,6 +33,14 @@
       background: #fff; border-radius: 8px; padding: 0.65rem 1rem; margin-bottom: 1rem;
       box-shadow: 0 1px 3px rgba(0,0,0,.06); font-size: 0.88rem;
     }
+    .backend-controls {
+      display: flex; align-items: center; gap: 0.45rem; flex: 0 1 auto;
+      color: #333; font-weight: 500;
+    }
+    .backend-controls select {
+      min-width: 11rem; border: 1px solid #c9ced6; border-radius: 6px;
+      background: #fff; color: #222; padding: 0.4rem 0.6rem; font: inherit;
+    }
     .gdp-controls label { flex: 1 1 200px; font-weight: 500; color: #333; }
     .gdp-controls input[type=range] { flex: 1 1 180px; max-width: 280px; }
     #gdp-readout { font-variant-numeric: tabular-nums; color: #555; min-width: 12rem; }
@@ -60,6 +68,20 @@
   <script type="application/json" id="figure1-data">{{ figure_data_json | safe }}</script>
   <script type="application/json" id="figure1-meta">{{ cache_meta_json | safe }}</script>
   <div class="gdp-controls" id="gdp-controls" aria-hidden="false" data-shock-unit="{{ gdp_shock_unit }}">
+    <div class="backend-controls">
+      <label for="backend-select">Backend</label>
+      <select
+        id="backend-select"
+        name="backend"
+        {% if backend_options | length <= 1 %}disabled{% endif %}
+      >
+        {% for option in backend_options %}
+        <option value="{{ option.id }}" {% if option.id == selected_backend %}selected{% endif %}>
+          {{ option.label }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
     <label id="gdp-label" for="gdp-shock">{{ gdp_label }}</label>
     <input
       type="range"
@@ -77,17 +99,45 @@
     (function () {
       const dataEl = document.getElementById("figure1-data");
       const metaEl = document.getElementById("figure1-meta");
+      const errEl = document.getElementById("err");
+      const chartsEl = document.getElementById("charts");
+      const backendSelect = document.getElementById("backend-select");
+      const labelEl = document.getElementById("gdp-label");
       const range = document.getElementById("gdp-shock");
       const readout = document.getElementById("gdp-readout");
       const controls = document.getElementById("gdp-controls");
-      const shockUnit = controls && controls.getAttribute("data-shock-unit") === "bps" ? "bps" : "pct";
       const statusEl = document.getElementById("status");
+      let shockUnit = controls && controls.getAttribute("data-shock-unit") === "bps" ? "bps" : "pct";
+      let activeBackend = backendSelect ? backendSelect.value : "";
       let meta = {};
       try {
         meta = metaEl && metaEl.textContent ? JSON.parse(metaEl.textContent) : {};
       } catch (_) {}
-      if (meta.cache_path) {
-        statusEl.textContent = "Loaded cache: " + meta.cache_path;
+
+      function setStatus(nextMeta) {
+        if (!nextMeta || !nextMeta.cache_path) {
+          statusEl.textContent = "";
+          return;
+        }
+        if (nextMeta.backend) {
+          statusEl.textContent = "Loaded " + nextMeta.backend + " cache: " + nextMeta.cache_path;
+          return;
+        }
+        statusEl.textContent = "Loaded cache: " + nextMeta.cache_path;
+      }
+
+      function showError(message) {
+        if (!errEl) return;
+        errEl.style.display = "";
+        errEl.innerHTML = "<pre class=\"err\"></pre>";
+        const pre = errEl.querySelector("pre");
+        if (pre) pre.textContent = message;
+      }
+
+      function hideError() {
+        if (!errEl) return;
+        errEl.style.display = "none";
+        errEl.textContent = "";
       }
 
       function approxEq(a, b) {
@@ -124,9 +174,67 @@
         }
       }
 
+      function syncBackendInUrl(backend) {
+        const url = new URL(window.location.href);
+        if (backend) url.searchParams.set("backend", backend);
+        else url.searchParams.delete("backend");
+        window.history.replaceState(null, "", url);
+      }
+
+      function applyBackendState(state) {
+        if (chartsEl) chartsEl.innerHTML = state.charts_html || "";
+        if (dataEl) dataEl.textContent = JSON.stringify(state.figure_data || {});
+        meta = state.meta || {};
+        if (metaEl) metaEl.textContent = JSON.stringify(meta);
+        if (labelEl) labelEl.textContent = state.gdp_label || "";
+        if (controls) controls.setAttribute("data-shock-unit", state.gdp_shock_unit || "pct");
+        shockUnit = state.gdp_shock_unit === "bps" ? "bps" : "pct";
+        range.min = String(state.gdp_shock_min);
+        range.max = String(state.gdp_shock_max);
+        range.step = String(state.gdp_shock_step);
+        const zero = 0;
+        const current = parseFloat(range.value);
+        const nextValue =
+          Number.isFinite(current) && current >= parseFloat(range.min) && current <= parseFloat(range.max)
+            ? current
+            : (zero >= parseFloat(range.min) && zero <= parseFloat(range.max) ? zero : parseFloat(range.min));
+        range.value = String(nextValue);
+        hideError();
+        setStatus(meta);
+        setShock(range.value);
+      }
+
+      async function switchBackend(backend) {
+        if (!backend) return;
+        if (backendSelect) backendSelect.disabled = true;
+        statusEl.textContent = "Loading " + backend + " cache...";
+        try {
+          const resp = await fetch("/api/figure1-state/" + encodeURIComponent(backend));
+          const state = await resp.json();
+          if (!resp.ok) {
+            throw new Error(state.detail || state.error || ("Request failed with " + resp.status));
+          }
+          applyBackendState(state);
+          activeBackend = backend;
+          syncBackendInUrl(backend);
+        } catch (err) {
+          if (backendSelect) backendSelect.value = activeBackend;
+          showError(err instanceof Error ? err.message : String(err));
+          setStatus(meta);
+        } finally {
+          if (backendSelect && backendSelect.options.length > 1) backendSelect.disabled = false;
+        }
+      }
+
+      setStatus(meta);
       range.addEventListener("input", function () {
         setShock(range.value);
       });
+      if (backendSelect) {
+        backendSelect.addEventListener("change", function () {
+          switchBackend(backendSelect.value);
+        });
+      }
       setShock(range.value);
     })();
   </script>

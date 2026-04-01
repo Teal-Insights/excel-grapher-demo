@@ -27,12 +27,6 @@ def _sample_cache_doc() -> dict[str, object]:
             "borderColor": "#000000",
             "borderDash": [],
         },
-        {
-            "name": "MX value, 1 yr only shock Standard&Tailored - for chart",
-            "data": [7.0, 7.5, 8.0],
-            "borderColor": "#e46c0a",
-            "borderDash": [],
-        },
         {"name": "Threshold", "data": [12.0, 12.0, 12.0], "borderColor": "#339966", "borderDash": [6, 4]},
     ]
     payload = {"categories": categories, "panels": [{"title": "Panel 1", "series": series}]}
@@ -50,6 +44,12 @@ def _legacy_cache_doc_with_hidden_series() -> dict[str, object]:
     categories = ["2024", "2025", "2026"]
     series = [
         {"name": "Baseline", "data": [10.0, 11.0, 12.0], "borderColor": "#4b82ad", "borderDash": []},
+        {
+            "name": "MX value, 1 yr only shock Standard&Tailored - for chart",
+            "data": [7.0, 7.5, 8.0],
+            "borderColor": "#e46c0a",
+            "borderDash": [],
+        },
         {"name": "Risk band", "data": [6.0, 6.0, 6.0], "borderColor": "#00ff00", "borderDash": []},
         {"name": "Threshold", "data": [12.0, 12.0, 12.0], "borderColor": "#339966", "borderDash": [6, 4]},
     ]
@@ -84,7 +84,6 @@ class ChartColorTests(unittest.TestCase):
                 "Baseline": "true",
                 "Historical scenario": "true",
                 "MX shock Standard&Tailored": "true",
-                "MX value, 1 yr only shock Standard&Tailored - for chart": "false",
                 "Threshold": "true",
             },
         )
@@ -120,24 +119,6 @@ class ChartColorTests(unittest.TestCase):
         )
         self.assertEqual(focal_lines["Threshold"]["stroke"], swatches["Threshold"])
 
-    def test_background_layers_paint_non_focal_series_before_focal_series(self) -> None:
-        html = build_chart_html(_sample_cache_doc())
-        root = ET.fromstring(f"<root>{html}</root>")
-
-        background_layer = root.find(".//svg:g[@class='shock-layer'][@data-pct='-0.5']", SVG_NS)
-        self.assertIsNotNone(background_layer)
-        assert background_layer is not None
-
-        names_in_order = [
-            line.attrib["data-series-name"]
-            for line in background_layer.findall("./svg:polyline", SVG_NS)
-        ]
-
-        self.assertLess(
-            names_in_order.index("MX value, 1 yr only shock Standard&Tailored - for chart"),
-            names_in_order.index("Baseline"),
-        )
-
     def test_layout_css_tints_background_layers_and_grays_selected_non_focal_lines(self) -> None:
         template = TEMPLATE_PATH.read_text(encoding="utf-8")
 
@@ -146,10 +127,11 @@ class ChartColorTests(unittest.TestCase):
         self.assertIn('g.shock-layer.shock-selected polyline.shock-line[data-focal="false"]', template)
         self.assertIn("stroke: rgba(45, 45, 45, 0.28);", template)
 
-    def test_renderer_hides_risk_band_from_legacy_cache_content(self) -> None:
+    def test_renderer_hides_hidden_series_from_legacy_cache_content(self) -> None:
         html = build_chart_html(_legacy_cache_doc_with_hidden_series())
 
         self.assertNotIn("Risk band", html)
+        self.assertNotIn("MX value, 1 yr only shock Standard&Tailored - for chart", html)
 
 
 if __name__ == "__main__":
