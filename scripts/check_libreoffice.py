@@ -15,9 +15,9 @@ if str(_REPO_ROOT) not in sys.path:
 
 from lic_dsf import graph
 from lic_dsf.libreoffice import payloads_from_precache_json
-from lic_dsf.workbook_backend import (
+from lic_dsf.workbook_check import (
     print_check_report,
-    resolve_backend,
+    resolve_workbook_check_backend,
     run_workbook_gdp_shock_check,
 )
 
@@ -53,7 +53,7 @@ def main() -> None:
     ap.add_argument(
         "--python-precache-json",
         type=Path,
-        default=Path(".cache/gdp-shocks.json"),
+        default=Path(".cache/gdp-shocks-excel-grapher.json"),
         help="Precache JSON to compare FormulaEvaluator vs workbook backend.",
     )
     ap.add_argument(
@@ -94,7 +94,7 @@ def main() -> None:
 
     result = run_workbook_gdp_shock_check(
         args.workbook,
-        backend=resolve_backend(args.backend),
+        backend=resolve_workbook_check_backend(args.backend),
         baseline_pct=args.baseline_pct,
         shock_pct=args.shock_pct,
         timeout_s=args.timeout,

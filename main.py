@@ -5,9 +5,9 @@ Library code lives in ``lic_dsf`` and ``web``. No graph load or ``FormulaEvaluat
 inline SVG is built at startup from the cache; the slider highlights the selected GDP shock (red, on top) over faint gray overlays of all other shocks.
 
 Run:
-  GDP_SHOCK_CACHE=.cache/gdp-shocks.json uv run uvicorn main:app --reload
+  GDP_SHOCK_CACHE=.cache/gdp-shocks-excel-grapher.json uv run uvicorn main:app --reload
   uv run python main.py
-  uv run python main.py --cache .cache/other-gdp-shocks.json
+  uv run python main.py --cache .cache/gdp-shocks-xlwings.json
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from lic_dsf.payload import (
 from web.charts import build_chart_html, load_shock_json, slim_chart_json_for_browser
 
 _ROOT = Path(__file__).resolve().parent
-_DEFAULT_CACHE = _ROOT / ".cache" / "gdp-shocks.json"
+_DEFAULT_CACHE = _ROOT / ".cache" / "gdp-shocks-excel-grapher.json"
 _TEMPLATES_DIR = _ROOT / "templates"
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),
@@ -58,7 +58,10 @@ async def _lifespan(app: FastAPI):
     chart_data: dict[str, Any] = {}
     meta: dict[str, Any] = {}
     if not path.is_file():
-        err = f"Missing cache file: {path}. Run: uv run python scripts/precache.py"
+        err = (
+            f"Missing cache file: {path}. "
+            "Run: uv run python scripts/precache.py --backend excel-grapher"
+        )
     else:
         try:
             doc = load_shock_json(path)
@@ -66,6 +69,7 @@ async def _lifespan(app: FastAPI):
             chart_data = slim_chart_json_for_browser(doc)
             meta = {
                 "cache_path": str(path),
+                "backend": doc.get("backend"),
                 "schema": doc.get("schema"),
                 "generated_at_unix_s": doc.get("generated_at_unix_s"),
                 "workbook_path": doc.get("workbook_path"),

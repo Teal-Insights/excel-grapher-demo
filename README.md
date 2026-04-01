@@ -12,36 +12,31 @@ Precomputed **Figure 1 — external stress** charts from an LIC-DSF-style Excel 
 From the repo root, with `PYTHONPATH=.` so `lic_dsf` imports resolve:
 
 ```bash
-PYTHONPATH=. uv run python scripts/precache.py --workbook lic-dsf-template-2025-08-12.xlsm --out .cache/gdp-shocks.json
+PYTHONPATH=. uv run python scripts/precache.py --backend excel-grapher --workbook lic-dsf-template-2025-08-12.xlsm
 ```
 
-The cache generator uses `FormulaEvaluator` as the real calculation backend. Workbook engines are only for sanity checking:
+`precache.py` now builds one backend-specific cache per run:
 
-- `--sanity-check` runs the sanity check after generating the cache.
-- `--libreoffice-check` remains available as a compatibility alias.
-- `--sanity-check-backend auto` chooses `xlwings` on Windows and LibreOffice on Linux.
-- `--sanity-check-backend libreoffice` forces LibreOffice recalc.
-- `--sanity-check-backend xlwings` forces Excel via `xlwings` on Windows.
-- `xlwings` is optional and only needed when you use the xlwings sanity-check backend.
+- `--backend excel-grapher` writes `.cache/gdp-shocks-excel-grapher.json`
+- `--backend xlwings` writes `.cache/gdp-shocks-xlwings.json`
+- `--backend libreoffice` writes `.cache/gdp-shocks-libreoffice.json`
+- `xlwings` is optional and only needed when you build the `xlwings` cache.
+- LibreOffice is optional and only needed when you build the `libreoffice` cache.
 
-Precache schema v2 stores GDP shocks as **percent** (not basis points): default **0%**, and one entry per step from **-5%** to **+5%** in **0.5%** increments (`lic_dsf.payload.GDP_SHOCK_PCT_*`).
+Precache schema v3 stores GDP shocks as **percent** (not basis points): default **0%**, and one entry per step from **-5%** to **+5%** in **0.5%** increments (`lic_dsf.payload.GDP_SHOCK_PCT_*`).
 
 Common options:
 
 | Flag | Purpose |
 |------|---------|
+| `--backend excel-grapher\|xlwings\|libreoffice` | Select the calculation engine used to build the cache |
 | `--workbook PATH` | Source `.xlsm` (default: workbook path from `lic_dsf.graph`) |
-| `--out PATH` | Output JSON (precache default: `.cache/gdp-shocks.json`) |
-| `--no-graph-cache` | Rebuild the dependency graph from the workbook instead of a pickle |
-| `--sanity-check` | Run the post-cache workbook sanity check |
-| `--libreoffice-check` | Compatibility alias for `--sanity-check` |
-| `--sanity-check-backend auto\|libreoffice\|xlwings` | Select the workbook engine used for sanity checking |
-| `--lo-soffice PATH` | Explicit LibreOffice binary for sanity checks |
-| `--lo-timeout N` | LibreOffice sanity-check timeout in seconds |
-| `--lo-baseline-pct N` | Sanity check reference shock in % (default 0) |
-| `--lo-shock-pct N` | Sanity check comparison shock in % (default 1) |
+| `--out PATH` | Output JSON (default: `.cache/gdp-shocks-<backend>.json`) |
+| `--no-graph-cache` | Rebuild the dependency graph instead of using the pickle cache (`excel-grapher` only) |
+| `--soffice PATH` | Explicit LibreOffice binary when `--backend libreoffice` |
+| `--timeout N` | LibreOffice conversion timeout in seconds |
 
-The web app’s default cache path is `.cache/gdp-shocks.json` unless you override it (see below).
+The web app’s default cache path is `.cache/gdp-shocks-excel-grapher.json` unless you override it (see below).
 
 ## Run the dashboard
 
@@ -54,13 +49,13 @@ uv run python main.py
 Optional cache file:
 
 ```bash
-uv run python main.py --cache .cache/gdp-shocks.json
+uv run python main.py --cache .cache/gdp-shocks-xlwings.json
 ```
 
 **Option B — Uvicorn directly**
 
 ```bash
-GDP_SHOCK_CACHE=.cache/gdp-shocks.json uv run uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+GDP_SHOCK_CACHE=.cache/gdp-shocks-excel-grapher.json uv run uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Environment variables (used when `--cache` is not set and you are not using `python main.py`):
@@ -91,7 +86,7 @@ uv run playwright install chromium
 Capture `README_files/dashboard.png` (requires an existing cache file):
 
 ```bash
-uv run python scripts/screenshot_dashboard.py --cache .cache/gdp-shocks.json
+uv run python scripts/screenshot_dashboard.py --cache .cache/gdp-shocks-excel-grapher.json
 ```
 
 Use `--out` to write a different path.

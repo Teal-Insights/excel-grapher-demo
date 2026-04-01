@@ -11,24 +11,17 @@ from .libreoffice import (
     _compare_shock_increment_python_minus_lo,
     _norm_pct,
     diff_chart_maps,
-    find_soffice,
     figure1_payload_to_chart_map,
+    find_soffice,
     load_gdp_input_targets,
-    libreoffice_to_xlsx,
-    read_figure1_chart_values,
-    write_shocked_xlsm,
 )
-from .payload import (
-    CHART_SHEET,
-    FIGURE1_PANELS,
-    col_letters,
-    read_category_labels_workbook,
-)
+from .libreoffice_backend import recalculate_figure1_payload_with_libreoffice
+from .xlwings_backend import recalculate_figure1_payload_with_xlwings
 
-BackendName = Literal["libreoffice", "xlwings"]
+WorkbookCheckBackend = Literal["libreoffice", "xlwings"]
 
 
-def resolve_backend(name: str) -> BackendName:
+def resolve_workbook_check_backend(name: str) -> WorkbookCheckBackend:
     if name == "auto":
         if sys.platform == "win32":
             return "xlwings"
@@ -36,123 +29,21 @@ def resolve_backend(name: str) -> BackendName:
             return "libreoffice"
         raise RuntimeError(
             "backend=auto is only supported on Windows and Linux in this script. "
-            "Choose --sanity-check-backend libreoffice or --sanity-check-backend xlwings explicitly."
+            "Choose --backend libreoffice or --backend xlwings explicitly."
         )
     if name == "libreoffice":
         return "libreoffice"
     if name == "xlwings":
         if sys.platform != "win32":
-            raise RuntimeError(
-                "backend=xlwings is only supported on Windows in this project."
-            )
+            raise RuntimeError("backend=xlwings is only supported on Windows in this project.")
         return "xlwings"
     raise ValueError(f"Unknown backend: {name}")
-
-
-def figure1_payload_from_chart_map(
-    categories: list[str],
-    chart_map: dict[str, float | None],
-) -> dict[str, Any]:
-    panels_out: list[dict[str, Any]] = []
-    for panel in FIGURE1_PANELS:
-        series_out: list[dict[str, Any]] = []
-        for spec in panel.series:
-            data = [chart_map[f"{CHART_SHEET}!{col}{spec.value_row}"] for col in col_letters()]
-            series_out.append(
-                {
-                    "name": spec.legend.strip() or "(unlabeled)",
-                    "data": data,
-                    "borderColor": spec.color,
-                    "borderDash": spec.dash,
-                }
-            )
-        panels_out.append({"title": panel.title, "series": series_out})
-    return {"categories": categories, "panels": panels_out}
-
-
-def read_figure1_payload_from_workbook(path: Path) -> dict[str, Any]:
-    categories = read_category_labels_workbook(path)
-    chart_map = read_figure1_chart_values(path)
-    return figure1_payload_from_chart_map(categories, chart_map)
-
-
-def _recalculate_with_xlwings(workbook: Path) -> None:
-    try:
-        import xlwings as xw
-    except ImportError as exc:
-        raise RuntimeError(
-            "xlwings is required for sanity-check-backend=xlwings but is not installed. "
-            "Install it in this environment and retry."
-        ) from exc
-
-    app = xw.App(visible=False, add_book=False)
-    app.display_alerts = False
-    app.screen_updating = False
-    try:
-        book = app.books.open(str(workbook), update_links=False, read_only=False)
-        try:
-            app.calculation = "automatic"
-            api = app.api
-            if hasattr(api, "CalculateFullRebuild"):
-                api.CalculateFullRebuild()
-            elif hasattr(api, "CalculateFull"):
-                api.CalculateFull()
-            else:
-                app.calculate()
-            book.save()
-        finally:
-            book.close()
-    finally:
-        app.quit()
-
-
-def recalculate_figure1_payload(
-    workbook: Path,
-    *,
-    pct: float,
-    backend: BackendName,
-    timeout_s: int = 600,
-    soffice: str | None = None,
-    tmpdir: Path | None = None,
-    keep_temps: bool = False,
-) -> dict[str, Any]:
-    src = workbook.resolve()
-    if not src.is_file():
-        raise FileNotFoundError(f"Workbook not found: {src}")
-
-    tmp = tmpdir or Path(tempfile.mkdtemp(prefix=f"{backend}-gdp-shock-"))
-    try:
-        targets = load_gdp_input_targets(src)
-        p = _norm_pct(pct)
-        shocked_xlsm = tmp / f"{src.stem}_{backend}_{p}pct.xlsm"
-        write_shocked_xlsm(src, shocked_xlsm, targets, pct)
-
-        if backend == "libreoffice":
-            bin_soffice = find_soffice(soffice)
-            if not bin_soffice:
-                raise RuntimeError(
-                    "LibreOffice not found (try --lo-soffice or PATH: soffice, libreoffice)."
-                )
-            recalculated = libreoffice_to_xlsx(
-                shocked_xlsm,
-                tmp,
-                soffice=bin_soffice,
-                timeout_s=timeout_s,
-            )
-        else:
-            _recalculate_with_xlwings(shocked_xlsm)
-            recalculated = shocked_xlsm
-
-        return read_figure1_payload_from_workbook(recalculated)
-    finally:
-        if tmpdir is None and not keep_temps:
-            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def run_workbook_gdp_shock_check(
     workbook: Path,
     *,
-    backend: BackendName,
+    backend: WorkbookCheckBackend,
     baseline_pct: float = 0.0,
     shock_pct: float = 1.0,
     timeout_s: int = 600,
@@ -170,24 +61,36 @@ def run_workbook_gdp_shock_check(
     try:
         targets = load_gdp_input_targets(src)
         b0, b1 = _norm_pct(baseline_pct), _norm_pct(shock_pct)
-        base_payload = recalculate_figure1_payload(
-            src,
-            pct=baseline_pct,
-            backend=backend,
-            timeout_s=timeout_s,
-            soffice=soffice,
-            tmpdir=tmp,
-            keep_temps=keep_temps,
-        )
-        shock_payload = recalculate_figure1_payload(
-            src,
-            pct=shock_pct,
-            backend=backend,
-            timeout_s=timeout_s,
-            soffice=soffice,
-            tmpdir=tmp,
-            keep_temps=keep_temps,
-        )
+        if backend == "libreoffice":
+            base_payload = recalculate_figure1_payload_with_libreoffice(
+                src,
+                pct=baseline_pct,
+                timeout_s=timeout_s,
+                soffice=soffice,
+                tmpdir=tmp,
+                keep_temps=keep_temps,
+            )
+            shock_payload = recalculate_figure1_payload_with_libreoffice(
+                src,
+                pct=shock_pct,
+                timeout_s=timeout_s,
+                soffice=soffice,
+                tmpdir=tmp,
+                keep_temps=keep_temps,
+            )
+        else:
+            base_payload = recalculate_figure1_payload_with_xlwings(
+                src,
+                pct=baseline_pct,
+                tmpdir=tmp,
+                keep_temps=keep_temps,
+            )
+            shock_payload = recalculate_figure1_payload_with_xlwings(
+                src,
+                pct=shock_pct,
+                tmpdir=tmp,
+                keep_temps=keep_temps,
+            )
 
         vb = figure1_payload_to_chart_map(base_payload)
         vs = figure1_payload_to_chart_map(shock_payload)
@@ -202,15 +105,15 @@ def run_workbook_gdp_shock_check(
         )
 
         top: list[dict[str, Any]] = []
-        for addr, b0, b1, d in rows:
-            if d is None:
+        for addr, base_value, shock_value, delta in rows:
+            if delta is None:
                 continue
             top.append(
                 {
                     "cell": addr,
-                    "baseline_value": b0,
-                    "shock_value": b1,
-                    "delta": d,
+                    "baseline_value": base_value,
+                    "shock_value": shock_value,
+                    "delta": delta,
                 }
             )
             if len(top) >= top_n:
@@ -288,12 +191,12 @@ def print_check_report(result: dict[str, Any]) -> None:
         f"(recalc delta under {backend} only)"
     )
     print(f"  Output cells compared: {result['output_cells_compared']}")
-    ma = result.get("max_abs_delta")
-    mn = result.get("mean_abs_delta")
-    if ma is not None:
-        print(f"  Max |shock - baseline|: {ma:.6g}")
-    if mn is not None:
-        print(f"  Mean |shock - baseline|: {mn:.6g}")
+    max_abs = result.get("max_abs_delta")
+    mean_abs = result.get("mean_abs_delta")
+    if max_abs is not None:
+        print(f"  Max |shock - baseline|: {max_abs:.6g}")
+    if mean_abs is not None:
+        print(f"  Mean |shock - baseline|: {mean_abs:.6g}")
     print("  Largest |shock - baseline| (sample):")
     for row in result.get("top_deltas") or []:
         print(

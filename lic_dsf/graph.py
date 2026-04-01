@@ -97,9 +97,9 @@ EXPORT_DIR = Path("dist/lic-dsf-2025-08-12")
 FIGURE1_DATA_ROWS: list[int] = [
     # Figure 1 (Output 2-1 Stress_Charts_Ex)
     51,
-    61,
-    62,
-    63,
+    61, # Baseline
+    62, # Historical Scenario
+    63, # MX Shock
     64,
     66,
     93,
@@ -109,15 +109,15 @@ FIGURE1_DATA_ROWS: list[int] = [
     106,
     108,
     135,
-    145,
-    146,
-    147,
+    145, # Baseline
+    146, # Historical Scenario
+    147, # MX Shock
     148,
     150,
     177,
-    187,
-    188,
-    189,
+    187, # Baseline
+    188, # Historical Scenario
+    189, # MX Shock
     190,
     192,
 ]
