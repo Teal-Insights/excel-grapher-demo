@@ -107,11 +107,23 @@ def _dash_attr(dash: list[int] | None) -> str:
     return f' stroke-dasharray="{" ".join(str(int(x)) for x in dash)}"'
 
 
-def _render_panel_group(
+def _x_px(i: int, n: int, margin_left: float, plot_w: float) -> float:
+    if n <= 1:
+        return margin_left + plot_w / 2.0
+    return margin_left + (i / (n - 1)) * plot_w
+
+
+def _y_px(v: float, y0: float, y1: float, margin_top: float, plot_h: float) -> float:
+    t = (v - y0) / (y1 - y0) if y1 != y0 else 0.5
+    return margin_top + (1.0 - t) * plot_h
+
+
+def _render_panel_static(
     *,
-    title: str,
     categories: list[str],
-    series: list[dict[str, Any]],
+    series_for_legend: list[dict[str, Any]],
+    y0: float,
+    y1: float,
     width: int = 520,
     height: int = 260,
     margin_left: float = 42.0,
@@ -125,16 +137,6 @@ def _render_panel_group(
 
     plot_w = float(width) - margin_left - margin_right
     plot_h = float(height) - margin_top - margin_bottom
-    y0, y1 = _y_domain(series)
-
-    def x_px(i: int) -> float:
-        if n <= 1:
-            return margin_left + plot_w / 2.0
-        return margin_left + (i / (n - 1)) * plot_w
-
-    def y_px(v: float) -> float:
-        t = (v - y0) / (y1 - y0) if y1 != y0 else 0.5
-        return margin_top + (1.0 - t) * plot_h
 
     parts: list[str] = [
         f'<rect x="0" y="0" width="{width}" height="{height}" fill="white"/>',
@@ -143,7 +145,7 @@ def _render_panel_group(
     grid_lines = 5
     for g in range(grid_lines + 1):
         gv = y0 + (y1 - y0) * (g / grid_lines)
-        gy = y_px(gv)
+        gy = _y_px(gv, y0, y1, margin_top, plot_h)
         parts.append(
             f'<line x1="{margin_left:.2f}" y1="{gy:.2f}" x2="{margin_left + plot_w:.2f}" y2="{gy:.2f}" '
             f'stroke="#e8e9eb" stroke-width="1"/>'
@@ -159,28 +161,16 @@ def _render_panel_group(
     )
 
     for i, cat in enumerate(categories):
-        cx = x_px(i)
+        cx = _x_px(i, n, margin_left, plot_w)
         parts.append(
             f'<text x="{cx:.2f}" y="{margin_top + plot_h + 14:.2f}" font-size="8" fill="#666" '
             f'text-anchor="middle">{_escape(str(cat))}</text>'
         )
 
-    for s in series:
-        color = str(s.get("borderColor") or "#000000")
-        dash = s.get("borderDash") or []
-        ys = list(s.get("data") or [])
-        d_attr = _dash_attr(dash if isinstance(dash, list) else [])
-        for seg in _segments(ys):
-            pts = " ".join(f"{x_px(i):.2f},{y_px(v):.2f}" for i, v in seg)
-            parts.append(
-                f'<polyline fill="none" stroke="{_escape(color)}" stroke-width="1.6" '
-                f'points="{pts}"{d_attr}/>'
-            )
-
     leg_y = margin_top + plot_h + 34
     leg_x0 = margin_left
     names_colors: Iterable[tuple[str, str]] = (
-        (str(s.get("name", "") or ""), str(s.get("borderColor") or "#000000")) for s in series
+        (str(s.get("name", "") or ""), str(s.get("borderColor") or "#000000")) for s in series_for_legend
     )
     items = [(name, color) for name, color in names_colors if name]
     col_w = plot_w / 2.0
@@ -200,10 +190,138 @@ def _render_panel_group(
     return "".join(parts)
 
 
+def _render_shock_polylines(
+    *,
+    series: list[dict[str, Any]],
+    categories: list[str],
+    y0: float,
+    y1: float,
+    width: int = 520,
+    height: int = 260,
+    margin_left: float = 42.0,
+    margin_right: float = 12.0,
+    margin_top: float = 28.0,
+    margin_bottom: float = 52.0,
+) -> str:
+    n = len(categories)
+    if n == 0:
+        return ""
+
+    plot_w = float(width) - margin_left - margin_right
+    plot_h = float(height) - margin_top - margin_bottom
+    parts: list[str] = []
+    for s in series:
+        dash = s.get("borderDash") or []
+        ys = list(s.get("data") or [])
+        d_attr = _dash_attr(dash if isinstance(dash, list) else [])
+        for seg in _segments(ys):
+            pts = " ".join(
+                f"{_x_px(i, n, margin_left, plot_w):.2f},{_y_px(v, y0, y1, margin_top, plot_h):.2f}"
+                for i, v in seg
+            )
+            parts.append(
+                f'<polyline class="shock-line" fill="none" stroke-width="1.6" '
+                f'pointer-events="none" points="{pts}"{d_attr}/>'
+            )
+    return "".join(parts)
+
+
+def _render_panel_group(
+    *,
+    title: str,
+    categories: list[str],
+    series: list[dict[str, Any]],
+    width: int = 520,
+    height: int = 260,
+    margin_left: float = 42.0,
+    margin_right: float = 12.0,
+    margin_top: float = 28.0,
+    margin_bottom: float = 52.0,
+) -> str:
+    """Single-shock full panel (grid + legend + colored series)."""
+    y0, y1 = _y_domain(series)
+    static = _render_panel_static(
+        categories=categories,
+        series_for_legend=series,
+        y0=y0,
+        y1=y1,
+        width=width,
+        height=height,
+        margin_left=margin_left,
+        margin_right=margin_right,
+        margin_top=margin_top,
+        margin_bottom=margin_bottom,
+    )
+    poly = _render_panel_group_polylines_colored(
+        series=series,
+        categories=categories,
+        y0=y0,
+        y1=y1,
+        width=width,
+        height=height,
+        margin_left=margin_left,
+        margin_right=margin_right,
+        margin_top=margin_top,
+        margin_bottom=margin_bottom,
+    )
+    return static + poly
+
+
+def _render_panel_group_polylines_colored(
+    *,
+    series: list[dict[str, Any]],
+    categories: list[str],
+    y0: float,
+    y1: float,
+    width: int = 520,
+    height: int = 260,
+    margin_left: float = 42.0,
+    margin_right: float = 12.0,
+    margin_top: float = 28.0,
+    margin_bottom: float = 52.0,
+) -> str:
+    n = len(categories)
+    if n == 0:
+        return ""
+    plot_w = float(width) - margin_left - margin_right
+    plot_h = float(height) - margin_top - margin_bottom
+    parts: list[str] = []
+    for s in series:
+        color = str(s.get("borderColor") or "#000000")
+        dash = s.get("borderDash") or []
+        ys = list(s.get("data") or [])
+        d_attr = _dash_attr(dash if isinstance(dash, list) else [])
+        for seg in _segments(ys):
+            pts = " ".join(
+                f"{_x_px(i, n, margin_left, plot_w):.2f},{_y_px(v, y0, y1, margin_top, plot_h):.2f}"
+                for i, v in seg
+            )
+            parts.append(
+                f'<polyline fill="none" stroke="{_escape(color)}" stroke-width="1.6" '
+                f'points="{pts}"{d_attr}/>'
+            )
+    return "".join(parts)
+
+
+def _all_series_for_panel_domain(
+    by_shock: dict[float, dict[str, Any]],
+    shock_list: list[float],
+    panel_idx: int,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for shock in shock_list:
+        pl = by_shock[shock]
+        panels = list(pl.get("panels") or [])
+        if panel_idx < len(panels):
+            out.extend(list(panels[panel_idx].get("series") or []))
+    return out
+
+
 def build_chart_html(cache_doc: dict[str, Any]) -> str:
     """
-    One <svg> per panel; each contains a <g class="shock-layer" data-pct="…"> per shock.
-    Default shock 0 is unhidden; others use the HTML hidden attribute.
+    One <svg> per panel: a static <g class="panel-static"> (grid, axes, legend) plus one
+    <g class="shock-layer" data-pct="…"> per shock containing only polylines. All layers
+    are visible; CSS grays out non-selected shocks and paints the selected shock red.
     """
     by_shock = payloads_by_shock(cache_doc)
     if not by_shock:
@@ -213,11 +331,16 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
     ref0 = by_shock.get(0.0) or by_shock[shock_list[0]]
     categories0 = list(ref0.get("categories") or [])
     panels0 = list(ref0.get("panels") or [])
+    default_shock = next((s for s in shock_list if abs(s) < 1e-9), shock_list[0])
 
     chunks: list[str] = []
     for panel_idx, ref_panel in enumerate(panels0):
         title = str(ref_panel.get("title") or f"Panel {panel_idx}")
         title_esc = html.escape(title)
+        ref_series = list(ref_panel.get("series") or [])
+        combined = _all_series_for_panel_domain(by_shock, shock_list, panel_idx)
+        y0, y1 = _y_domain(combined)
+
         chunks.append('<div class="card">')
         chunks.append(f"<h2>{title_esc}</h2>")
         chunks.append('<div class="chart-wrap">')
@@ -226,6 +349,16 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
             f'viewBox="0 0 520 260" class="figure-panel" role="group" '
             f'aria-label="{title_esc}">'
         )
+        chunks.append('<g class="panel-static">')
+        chunks.append(
+            _render_panel_static(
+                categories=categories0,
+                series_for_legend=ref_series,
+                y0=y0,
+                y1=y1,
+            )
+        )
+        chunks.append("</g>")
         for shock in shock_list:
             payload = by_shock[shock]
             panels = list(payload.get("panels") or [])
@@ -235,14 +368,16 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
             series = list(panel.get("series") or [])
             categories = list(payload.get("categories") or [])
             use_categories = categories0 if len(categories) == len(categories0) else categories
-            hidden_attr = "" if abs(shock) < 1e-9 else " hidden"
             pct_attr = f"{shock:g}"
-            chunks.append(f'<g class="shock-layer" data-pct="{pct_attr}"{hidden_attr}>')
+            sel = abs(shock - default_shock) < 1e-5
+            sel_class = " shock-selected" if sel else ""
+            chunks.append(f'<g class="shock-layer{sel_class}" data-pct="{pct_attr}">')
             chunks.append(
-                _render_panel_group(
-                    title=title,
-                    categories=use_categories,
+                _render_shock_polylines(
                     series=series,
+                    categories=use_categories,
+                    y0=y0,
+                    y1=y1,
                 )
             )
             chunks.append("</g>")

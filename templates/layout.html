@@ -32,12 +32,20 @@
     .gdp-controls input[type=range] { flex: 1 1 180px; max-width: 280px; }
     #gdp-readout { font-variant-numeric: tabular-nums; color: #555; min-width: 12rem; }
     pre.err { white-space: pre-wrap; }
+    /* All GDP shock curves visible: faint gray stacks (darker where paths overlap); selected in red on top. */
+    svg.figure-panel g.shock-layer:not(.shock-selected) polyline.shock-line {
+      stroke: rgba(45, 45, 45, 0.36);
+    }
+    svg.figure-panel g.shock-layer.shock-selected polyline.shock-line {
+      stroke: #c91818;
+    }
   </style>
 </head>
 <body>
   <h1>Figure 1 — External stress tests</h1>
-  <p class="sub">Data from precached JSON. Charts are SSR inline SVG; all GDP shock variants are embedded as
-    <code>&lt;g&gt;</code> layers and the slider toggles <code>hidden</code>. Numeric payloads are in
+  <p class="sub">Data from precached JSON. Charts are SSR inline SVG; all GDP shock curves are drawn as
+    <code>&lt;g class=&quot;shock-layer&quot;&gt;</code> overlays (semi-transparent gray); the slider highlights
+    the selected shock in red and brings it to the front. Numeric payloads are in
     <code>&lt;script type=&quot;application/json&quot; id=&quot;figure1-data&quot;&gt;</code>.</p>
   <div id="status"></div>
   {% if not ok %}
@@ -86,11 +94,13 @@
         if (!Number.isFinite(n)) return;
         document.querySelectorAll("svg.figure-panel").forEach(function (svg) {
           svg.querySelectorAll("g.shock-layer").forEach(function (g) {
-            const ga = g.getAttribute("data-pct");
-            const gv = parseFloat(ga);
-            if (Number.isFinite(gv) && approxEq(gv, n)) g.removeAttribute("hidden");
-            else g.setAttribute("hidden", "");
+            const gv = parseFloat(g.getAttribute("data-pct"));
+            const on = Number.isFinite(gv) && approxEq(gv, n);
+            if (on) g.classList.add("shock-selected");
+            else g.classList.remove("shock-selected");
           });
+          const selected = svg.querySelector("g.shock-layer.shock-selected");
+          if (selected) svg.appendChild(selected);
         });
         if (shockUnit === "bps") {
           const rel = n * 1e-4;

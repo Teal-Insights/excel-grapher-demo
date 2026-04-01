@@ -2,7 +2,7 @@
 Stress chart web app: serves precomputed GDP shock data from JSON.
 
 Library code lives in ``lic_dsf`` and ``web``. No graph load or ``FormulaEvaluator`` at request time;
-inline SVG is built at startup from the cache; the slider toggles ``hidden`` on pre-rendered ``<g>`` layers.
+inline SVG is built at startup from the cache; the slider highlights the selected GDP shock (red, on top) over faint gray overlays of all other shocks.
 
 Run:
   GDP_SHOCK_CACHE=.cache/gdp-shocks.json uv run uvicorn main:app --reload
