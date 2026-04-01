@@ -71,14 +71,28 @@ _FOCAL_SERIES_NAMES = frozenset(
         "Threshold",
     }
 )
+_HIDDEN_SERIES_NAMES = frozenset({"Risk band"})
+
+
+def _series_name(series: dict[str, Any]) -> str:
+    return str(series.get("name", "") or "")
+
+
+def _visible_series(series: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [s for s in series if _series_name(s) not in _HIDDEN_SERIES_NAMES]
 
 
 def _series_is_focal(series: dict[str, Any]) -> bool:
     explicit = series.get("isFocal")
     if explicit is not None:
         return bool(explicit)
-    name = str(series.get("name", "") or "")
-    return name in _FOCAL_SERIES_NAMES
+    return _series_name(series) in _FOCAL_SERIES_NAMES
+
+
+def _series_in_paint_order(series: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    indexed = list(enumerate(_visible_series(series)))
+    indexed.sort(key=lambda item: (1 if _series_is_focal(item[1]) else 0, item[0]))
+    return [series_item for _, series_item in indexed]
 
 
 def _finite_series_values(series: list[dict[str, Any]]) -> list[float]:
@@ -206,11 +220,11 @@ def _render_panel_static(
     leg_x0 = margin_left
     legend_items: Iterable[tuple[str, str, str]] = (
         (
-            str(s.get("name", "") or ""),
+            _series_name(s),
             str(s.get("borderColor") or "#000000"),
             _bool_attr(_series_is_focal(s)),
         )
-        for s in series_for_legend
+        for s in _visible_series(series_for_legend)
     )
     items = [(name, color, focal) for name, color, focal in legend_items if name]
     col_w = plot_w / 2.0
@@ -251,8 +265,8 @@ def _render_shock_polylines(
     plot_w = float(width) - margin_left - margin_right
     plot_h = float(height) - margin_top - margin_bottom
     parts: list[str] = []
-    for s in series:
-        name = str(s.get("name", "") or "")
+    for s in _series_in_paint_order(series):
+        name = _series_name(s)
         color = str(s.get("borderColor") or "#000000")
         focal = _bool_attr(_series_is_focal(s))
         dash = s.get("borderDash") or []
@@ -331,7 +345,7 @@ def _render_panel_group_polylines_colored(
     plot_w = float(width) - margin_left - margin_right
     plot_h = float(height) - margin_top - margin_bottom
     parts: list[str] = []
-    for s in series:
+    for s in _series_in_paint_order(series):
         color = str(s.get("borderColor") or "#000000")
         dash = s.get("borderDash") or []
         ys = list(s.get("data") or [])
@@ -358,7 +372,7 @@ def _all_series_for_panel_domain(
         pl = by_shock[shock]
         panels = list(pl.get("panels") or [])
         if panel_idx < len(panels):
-            out.extend(list(panels[panel_idx].get("series") or []))
+            out.extend(_visible_series(list(panels[panel_idx].get("series") or [])))
     return out
 
 

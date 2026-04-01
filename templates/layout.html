@@ -37,19 +37,19 @@
     .gdp-controls input[type=range] { flex: 1 1 180px; max-width: 280px; }
     #gdp-readout { font-variant-numeric: tabular-nums; color: #555; min-width: 12rem; }
     pre.err { white-space: pre-wrap; }
-    /* All GDP shock curves remain visible; selected focal series keep their own stroke colors. */
+    /* All GDP shock curves remain visible; background layers use each series' own color with reduced opacity. */
     svg.figure-panel g.shock-layer:not(.shock-selected) polyline.shock-line {
-      stroke: rgba(45, 45, 45, 0.36);
+      stroke-opacity: 0.36;
     }
     svg.figure-panel g.shock-layer.shock-selected polyline.shock-line[data-focal="false"] {
-      stroke: rgba(45, 45, 45, 0.36);
+      stroke: rgba(45, 45, 45, 0.28);
     }
   </style>
 </head>
 <body>
   <h1>Figure 1 — External stress tests</h1>
   <p class="sub">Data from precached JSON. Charts are SSR inline SVG; all GDP shock curves are drawn as
-    <code>&lt;g class=&quot;shock-layer&quot;&gt;</code> overlays (semi-transparent gray), and the selected shock keeps
+    <code>&lt;g class=&quot;shock-layer&quot;&gt;</code> overlays (semi-transparent tints of each series color), and the selected shock keeps
     focal series aligned with the legend while staying on top. Numeric payloads are in
     <code>&lt;script type=&quot;application/json&quot; id=&quot;figure1-data&quot;&gt;</code>.</p>
   <div id="status"></div>

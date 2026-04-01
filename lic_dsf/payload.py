@@ -76,7 +76,6 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
                 False,
             ),
             SeriesSpec(66, "Threshold", "#339966", [6, 4], True),
-            SeriesSpec(51, "Risk band", "#00ff00", [], False),
         ),
     ),
     PanelSpec(
@@ -96,7 +95,6 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
                 False,
             ),
             SeriesSpec(108, "Threshold", "#339966", [6, 4], True),
-            SeriesSpec(93, "Risk band", "#00ff00", [], False),
         ),
     ),
     PanelSpec(
@@ -116,7 +114,6 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
                 False,
             ),
             SeriesSpec(150, "Threshold", "#339966", [6, 4], True),
-            SeriesSpec(135, "Risk band", "#00ff00", [], False),
         ),
     ),
     PanelSpec(
@@ -136,7 +133,6 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
                 False,
             ),
             SeriesSpec(192, "Threshold", "#339966", [6, 4], True),
-            SeriesSpec(177, "Risk band", "#00ff00", [], False),
         ),
     ),
 )
