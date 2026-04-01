@@ -7,6 +7,7 @@ inline SVG is built at startup from the cache; the slider toggles ``hidden`` on 
 Run:
   GDP_SHOCK_CACHE=.cache/gdp-shocks.json uv run uvicorn main:app --reload
   uv run python main.py
+  uv run python main.py --cache .cache/other-gdp-shocks.json
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from lic_dsf.payload import GDP_SHOCK_BPS_MAX, GDP_SHOCK_BPS_MIN
 from web.charts import build_chart_html, load_shock_json, slim_chart_json_for_browser
 
 _ROOT = Path(__file__).resolve().parent
-_DEFAULT_CACHE = _ROOT / ".cache" / "gdp-shocks.json"
+_DEFAULT_CACHE = _ROOT / ".cache" / "dsf-uga-gdp-shocks.json"
 _TEMPLATES_DIR = _ROOT / "templates"
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),
@@ -122,7 +123,18 @@ def index() -> str:
 
 
 def main() -> None:
+    import argparse
     import uvicorn
+
+    p = argparse.ArgumentParser(description="Serve LIC-DSF Figure 1 stress chart.")
+    p.add_argument(
+        "--cache",
+        metavar="PATH",
+        help="GDP shock JSON cache file (overrides GDP_SHOCK_CACHE / default path)",
+    )
+    args = p.parse_args()
+    if args.cache:
+        os.environ["GDP_SHOCK_CACHE"] = str(Path(args.cache).expanduser().resolve())
 
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
 

@@ -70,7 +70,7 @@ class ExportRangeConfig(TypedDict):
 # Workbook
 # ---------------------------------------------------------------------------
 
-WORKBOOK_PATH = Path("lic-dsf-template-2025-08-12.xlsm")
+WORKBOOK_PATH = Path("dsf-uga.xlsm")
 WORKBOOK_TEMPLATE_URL = (
     "https://thedocs.worldbank.org/en/doc/f0ade6bcf85b6f98dbeb2c39a2b7770c-0360012025/original/LIC-DSF-IDA21-Template-08-12-2025-vf.xlsm"
 )
@@ -387,6 +387,12 @@ def save_graph_cache(
 def main() -> None:
     parser = argparse.ArgumentParser(description="LIC-DSF indicator dependency mapping.")
     parser.add_argument(
+        "--workbook",
+        type=Path,
+        default=WORKBOOK_PATH,
+        help=f"Source workbook path (default: {WORKBOOK_PATH}).",
+    )
+    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="Ignore disk cache and rebuild the dependency graph.",
@@ -398,13 +404,14 @@ def main() -> None:
         help="Pickle path for the graph cache (default: .cache/<workbook-stem>-dependency-graph.pkl).",
     )
     args = parser.parse_args()
+    workbook_path = args.workbook.resolve()
 
     print("=" * 70)
     print("LIC-DSF Indicator Dependency Mapping")
     print("=" * 70)
     
-    if not WORKBOOK_PATH.exists():
-        print(f"Error: Workbook not found at {WORKBOOK_PATH}")
+    if not workbook_path.exists():
+        print(f"Error: Workbook not found at {workbook_path}")
         return
 
     # Discover targets: explicit ranges (all cells) and indicator rows (formula cells only)
@@ -425,7 +432,7 @@ def main() -> None:
         print("No formula cells found. Exiting.")
         return
 
-    cache_path = args.cache_path or _default_graph_cache_path(WORKBOOK_PATH)
+    cache_path = args.cache_path or _default_graph_cache_path(workbook_path)
 
     print("\n2. Loading / building dependency graph...", flush=True)
     t_graph = time.perf_counter()
@@ -433,7 +440,7 @@ def main() -> None:
     if not args.no_cache:
         graph = try_load_graph_cache(
             cache_path,
-            WORKBOOK_PATH,
+            workbook_path,
             all_targets,
             max_depth=GRAPH_MAX_DEPTH,
         )
@@ -445,7 +452,7 @@ def main() -> None:
         print("   Starting create_dependency_graph...", flush=True)
         try:
             graph = create_dependency_graph(
-                WORKBOOK_PATH,
+                workbook_path,
                 all_targets,
                 load_values=GRAPH_LOAD_VALUES,
                 max_depth=GRAPH_MAX_DEPTH,
@@ -466,7 +473,7 @@ def main() -> None:
                 save_graph_cache(
                     cache_path,
                     graph,
-                    WORKBOOK_PATH,
+                    workbook_path,
                     all_targets,
                     max_depth=GRAPH_MAX_DEPTH,
                 )
@@ -491,7 +498,7 @@ def main() -> None:
 
     # Workbook calc settings (useful context for interpreting cycles)
     print("\n3. Workbook calculation settings...")
-    settings = get_calc_settings(WORKBOOK_PATH)
+    settings = get_calc_settings(workbook_path)
     print(f"   Iterate enabled: {settings.iterate_enabled}")
     print(f"   Iterate count:   {settings.iterate_count}")
     print(f"   Iterate delta:   {settings.iterate_delta}")
@@ -513,7 +520,7 @@ def main() -> None:
     # Validate against calcChain.xml
     print("\n5. Validating against calcChain.xml...")
     scope = {parse_range_spec(entry["range_spec"])[0] for entry in EXPORT_RANGES}
-    result = validate_graph(graph, WORKBOOK_PATH, scope=scope)
+    result = validate_graph(graph, workbook_path, scope=scope)
     
     print(f"   Valid: {result.is_valid}")
     for msg in result.messages:

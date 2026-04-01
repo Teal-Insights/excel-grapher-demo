@@ -9,6 +9,7 @@ fast, pre-cached loading in the webapp.
 
 Run:
   uv run python scripts/precache.py
+  uv run python scripts/precache.py --workbook dsf-uga.xlsm
   uv run python scripts/precache.py --libreoffice-check
 """
 
@@ -165,6 +166,12 @@ def main() -> None:
         description="Precompute chart outputs for all GDP shock slider states."
     )
     ap.add_argument(
+        "--workbook",
+        type=Path,
+        default=lic_graph.WORKBOOK_PATH,
+        help=f"Source .xlsm workbook (default: {lic_graph.WORKBOOK_PATH}).",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
         default=Path(".cache/gdp-shocks.json"),
@@ -223,6 +230,7 @@ def main() -> None:
         help="If set, exit 1 when max|Python-LO| at --lo-shock-bps exceeds EPS (after successful LO run).",
     )
     args = ap.parse_args()
+    lic_graph.WORKBOOK_PATH = args.workbook.resolve()
 
     t0 = time.perf_counter()
     graph = _load_graph(no_cache=bool(args.no_graph_cache))
