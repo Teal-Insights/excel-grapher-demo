@@ -50,6 +50,19 @@ def _bool_attr(value: Any) -> str:
     return "true" if bool(value) else "false"
 
 
+def _panel_shock_label(panel: dict[str, Any]) -> str:
+    return str(panel.get("mostExtremeShockLabel", "") or "").strip()
+
+
+def _panel_breach_count(panel: dict[str, Any], key: str) -> str:
+    value = panel.get(key)
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 _FOCAL_SERIES_NAMES = frozenset(
     {
         "Baseline",
@@ -376,6 +389,35 @@ def build_chart_html(cache_doc: dict[str, Any]) -> str:
 
         chunks.append('<div class="card">')
         chunks.append(f"<h2>{title_esc}</h2>")
+        chunks.append('<div class="panel-meta">')
+        for shock in shock_list:
+            payload = by_shock[shock]
+            panels = list(payload.get("panels") or [])
+            if panel_idx >= len(panels):
+                continue
+            panel = panels[panel_idx]
+            pct_attr = f"{shock:g}"
+            sel = abs(shock - default_shock) < 1e-5
+            sel_class = " is-selected" if sel else ""
+            shock_label = _panel_shock_label(panel)
+            baseline_breaches = _panel_breach_count(panel, "baselineBreaches")
+            shock_breaches = _panel_breach_count(panel, "shockBreaches")
+            chunks.append(f'<div class="panel-meta-entry{sel_class}" data-pct="{pct_attr}">')
+            if shock_label:
+                chunks.append(
+                    f'<p class="panel-shock-label" aria-label="Most extreme shock">{html.escape(shock_label)}</p>'
+                )
+            if baseline_breaches or shock_breaches:
+                chunks.append('<p class="panel-breach-counts">')
+                chunks.append(
+                    f'Baseline breaches: <span class="count">{html.escape(baseline_breaches or "-")}</span>'
+                )
+                chunks.append(
+                    f' | Shock breaches: <span class="count">{html.escape(shock_breaches or "-")}</span>'
+                )
+                chunks.append("</p>")
+            chunks.append("</div>")
+        chunks.append("</div>")
         chunks.append('<div class="chart-wrap">')
         chunks.append(
             f'<svg xmlns="http://www.w3.org/2000/svg" width="520" height="260" '

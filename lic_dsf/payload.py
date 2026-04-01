@@ -50,6 +50,9 @@ class SeriesSpec:
 @dataclass(frozen=True, slots=True)
 class PanelSpec:
     title: str
+    most_extreme_shock_row: int
+    baseline_breaches_row: int
+    shock_breaches_row: int
     series: tuple[SeriesSpec, ...]
 
 
@@ -58,6 +61,9 @@ class PanelSpec:
 FIGURE1_PANELS: tuple[PanelSpec, ...] = (
     PanelSpec(
         title="PV of debt-to-GDP ratio",
+        most_extreme_shock_row=14,
+        baseline_breaches_row=74,
+        shock_breaches_row=75,
         series=(
             SeriesSpec(61, "Baseline", "#4b82ad", [], True),
             SeriesSpec(62, "Historical scenario", "#ff0000", [10, 5], True),
@@ -74,7 +80,10 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
         ),
     ),
     PanelSpec(
-        title="PV of debt-to-revenue ratio",
+        title="PV of debt-to-exports ratio",
+        most_extreme_shock_row=15,
+        baseline_breaches_row=116,
+        shock_breaches_row=117,
         series=(
             SeriesSpec(103, "Baseline", "#4b82ad", [], True),
             SeriesSpec(104, "Historical scenario", "#ff0000", [10, 5], True),
@@ -91,7 +100,10 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
         ),
     ),
     PanelSpec(
-        title="Debt service-to-revenue ratio",
+        title="Debt service-to-exports ratio",
+        most_extreme_shock_row=16,
+        baseline_breaches_row=158,
+        shock_breaches_row=159,
         series=(
             SeriesSpec(145, "Baseline", "#4b82ad", [], True),
             SeriesSpec(146, "Historical scenario", "#ff0000", [10, 5], True),
@@ -108,7 +120,10 @@ FIGURE1_PANELS: tuple[PanelSpec, ...] = (
         ),
     ),
     PanelSpec(
-        title="Debt service-to-GDP ratio",
+        title="Debt service-to-revenue ratio",
+        most_extreme_shock_row=17,
+        baseline_breaches_row=200,
+        shock_breaches_row=201,
         series=(
             SeriesSpec(187, "Baseline", "#4b82ad", [], True),
             SeriesSpec(188, "Historical scenario", "#ff0000", [10, 5], True),
@@ -277,6 +292,19 @@ def category_keys() -> list[str]:
     return [cell_key(c, YEAR_ROW) for c in col_letters()]
 
 
+def panel_annotation_keys() -> list[str]:
+    keys: list[str] = []
+    for panel in FIGURE1_PANELS:
+        keys.extend(
+            [
+                cell_key("D", panel.most_extreme_shock_row),
+                cell_key("D", panel.baseline_breaches_row),
+                cell_key("D", panel.shock_breaches_row),
+            ]
+        )
+    return keys
+
+
 def read_category_labels_workbook(workbook_path) -> list[str]:
     wb = fastpyxl.load_workbook(workbook_path, data_only=True, keep_vba=False)
     try:
@@ -286,6 +314,37 @@ def read_category_labels_workbook(workbook_path) -> list[str]:
             v = ws[f"{col}{YEAR_ROW}"].value
             labels.append(text_scalar(v))
         return labels
+    finally:
+        wb.close()
+
+
+def count_scalar(v: Any) -> int | float | None:
+    numeric = numeric_scalar(v)
+    if numeric is None:
+        return None
+    return int(numeric) if numeric.is_integer() else numeric
+
+
+def read_panel_annotations_workbook(workbook_path) -> list[dict[str, Any]]:
+    wb = fastpyxl.load_workbook(workbook_path, data_only=True, keep_vba=False)
+    try:
+        ws = wb[CHART_SHEET]
+        annotations: list[dict[str, Any]] = []
+        for panel in FIGURE1_PANELS:
+            annotations.append(
+                {
+                    "mostExtremeShockLabel": text_scalar(
+                        ws[f"D{panel.most_extreme_shock_row}"].value
+                    ),
+                    "baselineBreaches": count_scalar(
+                        ws[f"D{panel.baseline_breaches_row}"].value
+                    ),
+                    "shockBreaches": count_scalar(
+                        ws[f"D{panel.shock_breaches_row}"].value
+                    ),
+                }
+            )
+        return annotations
     finally:
         wb.close()
 
@@ -340,6 +399,26 @@ def build_figure1_payload(
         cat_vals = ev.evaluate(cat_keys)
         categories = [text_scalar(cat_vals[k]) for k in cat_keys]
 
+    annotation_keys = panel_annotation_keys()
+    if not all(graph.get_node(k) for k in annotation_keys):
+        panel_annotations = read_panel_annotations_workbook(workbook_path)
+    else:
+        annotation_vals = ev.evaluate(annotation_keys)
+        panel_annotations = [
+            {
+                "mostExtremeShockLabel": text_scalar(
+                    annotation_vals[cell_key("D", panel.most_extreme_shock_row)]
+                ),
+                "baselineBreaches": count_scalar(
+                    annotation_vals[cell_key("D", panel.baseline_breaches_row)]
+                ),
+                "shockBreaches": count_scalar(
+                    annotation_vals[cell_key("D", panel.shock_breaches_row)]
+                ),
+            }
+            for panel in FIGURE1_PANELS
+        ]
+
     value_cols = col_letters()
 
     all_keys: list[str] = []
@@ -359,7 +438,11 @@ def build_figure1_payload(
     evaluated = ev.evaluate(all_keys)
 
     panels_out: list[dict[str, Any]] = []
-    for panel in FIGURE1_PANELS:
+    for panel, annotation in zip(
+        FIGURE1_PANELS,
+        panel_annotations,
+        strict=True,
+    ):
         series_out: list[dict[str, Any]] = []
         for s in panel.series:
             name = s.legend.strip() or "(unlabeled)"
@@ -374,6 +457,14 @@ def build_figure1_payload(
                     "borderDash": s.dash,
                 }
             )
-        panels_out.append({"title": panel.title, "series": series_out})
+        panels_out.append(
+            {
+                "title": panel.title,
+                "mostExtremeShockLabel": annotation["mostExtremeShockLabel"],
+                "baselineBreaches": annotation["baselineBreaches"],
+                "shockBreaches": annotation["shockBreaches"],
+                "series": series_out,
+            }
+        )
 
     return {"categories": categories, "panels": panels_out}

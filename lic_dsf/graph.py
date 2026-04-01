@@ -122,9 +122,84 @@ FIGURE1_DATA_ROWS: list[int] = [
     192,
 ]
 
+EXPLICIT_EXPORT_RANGES: tuple[ExportRangeConfig, ...] = (
+    # D14 names the most extreme shock for the PV of debt-to-GDP ratio panel.
+    {
+        "label": "PV of debt-to-GDP ratio most extreme shock label",
+        "range_spec": "'Chart Data'!D14",
+        "entrypoint_mode": "per_cell",
+    },
+    # D15 names the most extreme shock for the PV of debt-to-exports ratio panel.
+    {
+        "label": "PV of debt-to-exports ratio most extreme shock label",
+        "range_spec": "'Chart Data'!D15",
+        "entrypoint_mode": "per_cell",
+    },
+    # D16 names the most extreme shock for the debt service-to-exports ratio panel.
+    {
+        "label": "Debt service-to-exports ratio most extreme shock label",
+        "range_spec": "'Chart Data'!D16",
+        "entrypoint_mode": "per_cell",
+    },
+    # D17 names the most extreme market shock for the debt service-to-revenue ratio panel.
+    {
+        "label": "Debt service-to-revenue ratio most extreme market shock label",
+        "range_spec": "'Chart Data'!D17",
+        "entrypoint_mode": "per_cell",
+    },
+    # D74 reports the number of baseline breaches for the PV of debt-to-GDP ratio panel.
+    {
+        "label": "PV of debt-to-GDP ratio baseline breaches count",
+        "range_spec": "'Chart Data'!D74",
+        "entrypoint_mode": "per_cell",
+    },
+    # D75 reports the number of shock breaches for the PV of debt-to-GDP ratio panel.
+    {
+        "label": "PV of debt-to-GDP ratio shock breaches count",
+        "range_spec": "'Chart Data'!D75",
+        "entrypoint_mode": "per_cell",
+    },
+    # D116 reports the number of baseline breaches for the PV of debt-to-exports ratio panel.
+    {
+        "label": "PV of debt-to-exports ratio baseline breaches count",
+        "range_spec": "'Chart Data'!D116",
+        "entrypoint_mode": "per_cell",
+    },
+    # D117 reports the number of shock breaches for the PV of debt-to-exports ratio panel.
+    {
+        "label": "PV of debt-to-exports ratio shock breaches count",
+        "range_spec": "'Chart Data'!D117",
+        "entrypoint_mode": "per_cell",
+    },
+    # D158 reports the number of baseline breaches for the debt service-to-exports ratio panel.
+    {
+        "label": "Debt service-to-exports ratio baseline breaches count",
+        "range_spec": "'Chart Data'!D158",
+        "entrypoint_mode": "per_cell",
+    },
+    # D159 reports the number of shock breaches for the debt service-to-exports ratio panel.
+    {
+        "label": "Debt service-to-exports ratio shock breaches count",
+        "range_spec": "'Chart Data'!D159",
+        "entrypoint_mode": "per_cell",
+    },
+    # D200 reports the number of baseline breaches for the debt service-to-revenue ratio panel.
+    {
+        "label": "Debt service-to-revenue ratio baseline breaches count",
+        "range_spec": "'Chart Data'!D200",
+        "entrypoint_mode": "per_cell",
+    },
+    # D201 reports the number of shock breaches for the debt service-to-revenue ratio panel.
+    {
+        "label": "Debt service-to-revenue ratio shock breaches count",
+        "range_spec": "'Chart Data'!D201",
+        "entrypoint_mode": "per_cell",
+    },
+)
+
 
 def _export_chart_data_ranges() -> list[ExportRangeConfig]:
-    out: list[ExportRangeConfig] = []
+    out: list[ExportRangeConfig] = list(EXPLICIT_EXPORT_RANGES)
     seen_row_specs = {entry["range_spec"] for entry in out}
 
     def add_chart_data_row(row: int, label: str) -> None:

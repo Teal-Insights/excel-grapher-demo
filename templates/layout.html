@@ -16,6 +16,11 @@
       padding: 0.75rem 0.75rem 0.25rem;
     }
     .card h2 { font-size: 0.85rem; font-weight: 600; margin: 0 0 0.5rem; color: #333; }
+    .panel-meta-entry { display: none; }
+    .panel-meta-entry.is-selected { display: block; }
+    .panel-shock-label { font-size: 0.78rem; color: #5c5c5c; margin: -0.15rem 0 0.55rem; }
+    .panel-breach-counts { font-size: 0.78rem; color: #4a4a4a; margin: -0.2rem 0 0.55rem; }
+    .panel-breach-counts .count { font-variant-numeric: tabular-nums; font-weight: 600; }
     .chart-wrap { position: relative; height: 260px; }
     .chart-wrap svg.figure-panel { display: block; width: 100%; height: 100%; }
     #err {
@@ -92,6 +97,14 @@
       function setShock(raw) {
         const n = parseFloat(raw);
         if (!Number.isFinite(n)) return;
+        document.querySelectorAll(".card").forEach(function (card) {
+          card.querySelectorAll(".panel-meta-entry").forEach(function (entry) {
+            const gv = parseFloat(entry.getAttribute("data-pct"));
+            const on = Number.isFinite(gv) && approxEq(gv, n);
+            if (on) entry.classList.add("is-selected");
+            else entry.classList.remove("is-selected");
+          });
+        });
         document.querySelectorAll("svg.figure-panel").forEach(function (svg) {
           svg.querySelectorAll("g.shock-layer").forEach(function (g) {
             const gv = parseFloat(g.getAttribute("data-pct"));
