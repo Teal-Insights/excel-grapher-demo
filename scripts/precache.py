@@ -4,8 +4,8 @@ Precompute chart outputs for the GDP forecast shock slider.
 
 This script evaluates the chart payload once at the default (0% shock), plus every
 other level from GDP_SHOCK_PCT_MIN..GDP_SHOCK_PCT_MAX in GDP_SHOCK_PCT_STEP increments
-(forecast cells set to baseline * (1 + pct/100)), and writes the results to JSON for
-the webapp slider.
+(forecast growth rates shocked by pct/100 and then rebuilt into forecast levels),
+and writes the results to JSON for the webapp slider.
 
 Run:
   uv run python scripts/precache.py
@@ -41,7 +41,7 @@ from lic_dsf.payload import (
     build_figure1_payload,
     gdp_forecast_baselines,
     gdp_forecast_cell_keys,
-    gdp_forecast_value_from_percent,
+    gdp_forecast_series_from_percent,
     gdp_shock_percent_levels,
 )
 
@@ -140,8 +140,9 @@ def _compute_formula_evaluator_entries(
     )
 
     def eval_at_pct(pct: float) -> CacheEntry:
-        for k, base in zip(keys, baselines, strict=True):
-            ev.set_value(k, gdp_forecast_value_from_percent(float(base), pct))
+        shocked_series = gdp_forecast_series_from_percent(baselines, pct)
+        for k, value in zip(keys, shocked_series, strict=True):
+            ev.set_value(k, value)
         payload = build_figure1_payload(
             graph,
             workbook_path=lic_graph.WORKBOOK_PATH,

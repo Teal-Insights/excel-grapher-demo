@@ -1,8 +1,9 @@
 """
 LibreOffice headless recalc sanity check for GDP forecast shocks.
 
-Edits the workbook copy with ``gdp_forecast_value_from_percent``, converts via
-``soffice --headless --convert-to xlsx``, reads Figure 1 Chart Data cells, and
+Edits the workbook copy with shocked GDP forecast levels derived from row-12
+growth-rate shocks, converts via ``soffice --headless --convert-to xlsx``, reads
+Figure 1 Chart Data cells, and
 optionally compares those values to a Python ``FormulaEvaluator`` payload
 (``build_figure1_payload`` / precache JSON) for the same percent shock levels.
 
@@ -35,7 +36,7 @@ from .payload import (
     FIGURE1_PANELS,
     _read_gdp_forecast_cell_values_from_workbook,
     col_letters,
-    gdp_forecast_value_from_percent,
+    gdp_forecast_series_from_percent,
 )
 
 
@@ -88,8 +89,12 @@ def write_shocked_xlsm(
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     wb = openpyxl.load_workbook(dst, keep_vba=True)
-    for sheet, a1, base in targets:
-        wb[sheet][a1] = gdp_forecast_value_from_percent(base, pct)
+    shocked_series = gdp_forecast_series_from_percent(
+        [base for _sheet, _a1, base in targets],
+        pct,
+    )
+    for (sheet, a1, _base), shocked_value in zip(targets, shocked_series, strict=True):
+        wb[sheet][a1] = shocked_value
     wb.save(dst)
 
 

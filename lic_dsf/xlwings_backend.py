@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .libreoffice import load_gdp_input_targets
-from .payload import gdp_forecast_value_from_percent
+from .payload import gdp_forecast_series_from_percent
 from .workbook_payload import read_figure1_payload_from_workbook
 
 
@@ -20,10 +20,16 @@ def _write_shocked_inputs_with_xlwings(
     targets: list[tuple[str, str, float]],
     pct: float,
 ) -> None:
-    for sheet_name, a1, base in targets:
-        book.sheets[sheet_name].range(a1).value = gdp_forecast_value_from_percent(
-            base, pct
-        )
+    shocked_series = gdp_forecast_series_from_percent(
+        [base for _sheet_name, _a1, base in targets],
+        pct,
+    )
+    for (sheet_name, a1, _base), shocked_value in zip(
+        targets,
+        shocked_series,
+        strict=True,
+    ):
+        book.sheets[sheet_name].range(a1).value = shocked_value
 
 
 def _recalculate_with_xlwings(

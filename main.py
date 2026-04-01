@@ -111,7 +111,7 @@ def index() -> str:
             charts_html="",
             figure_data_json="null",
             gdp_label=(
-                "GDP forecast shock (baseline × (1 + %/100), "
+                "GDP forecast growth-rate shock (implied growth + % points, "
                 f"{GDP_SHOCK_PCT_MIN:g}% to {GDP_SHOCK_PCT_MAX:g}%)"
             ),
             gdp_shock_min=GDP_SHOCK_PCT_MIN,
@@ -128,7 +128,7 @@ def index() -> str:
         shock_step = float(slim["pct_step"])
         shock_unit = "pct"
         gdp_label = (
-            "GDP forecast shock (baseline × (1 + %/100), "
+            "GDP forecast growth-rate shock (implied growth + % points, "
             f"{shock_min:g}% to {shock_max:g}%)"
         )
     else:

@@ -18,13 +18,15 @@ CHART_SHEET = "Chart Data"
 YEAR_ROW = 35
 
 # Baseline GDP forecast inputs, forecasts start at column X.
-# Slider applies multiplicative percent: new = baseline * (1 + pct/100), e.g. pct=0.5 -> +0.5%.
+# Slider shocks the implied year-over-year growth rate in row 12 by pct/100,
+# then rebuilds the level series forward from the unchanged first forecast cell.
 GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
 GDP_FORECAST_ROWS = (12,)
 GDP_FORECAST_START_COL = "X"
 GDP_SHOCK_PCT_MIN = -5.0
 GDP_SHOCK_PCT_MAX = 5.0
 GDP_SHOCK_PCT_STEP = 0.5
+_GDP_GROWTH_EPSILON = 1e-12
 
 # Columns D:N (11 points), matching the workbook charts.
 _VALUE_COL_INDICES = range(4, 15)
@@ -149,7 +151,7 @@ def _read_gdp_forecast_cell_values_from_workbook(
         ws = wb[GDP_FORECAST_SHEET]
 
         start_idx = _gdp_forecast_start_col_idx()
-        # Scan right until we hit a run of blank columns for both rows.
+        # Scan right until we hit a run of blank columns in the forecast series.
         blank_run = 0
         max_scan_cols = 512
 
@@ -231,8 +233,40 @@ def gdp_shock_percent_levels() -> tuple[float, ...]:
     return tuple(round(lo + i * step, 6) for i in range(n + 1))
 
 
-def gdp_forecast_value_from_percent(baseline: float, pct: float) -> float:
-    return baseline * (1.0 + pct / 100.0)
+def gdp_forecast_series_from_percent(baselines: list[float], pct: float) -> list[float]:
+    """
+    Shock the row-12 forecast series via implied growth rates.
+
+    The first forecast cell (X12) stays unchanged. Each later point derives its
+    baseline implied growth from consecutive baseline cells:
+
+        growth_t = (level_t - level_t-1) / level_t-1
+
+    The slider adds ``pct / 100`` to each implied growth rate, then the level
+    series is rebuilt recursively from the shocked prior value.
+
+    When the baseline prior value is effectively zero, the implied growth rate is
+    undefined. In that case we leave that step at its baseline level and resume
+    growth-rate shocking from the next finite baseline pair.
+    """
+    if not baselines:
+        return []
+
+    shocked = [float(baselines[0])]
+    shock_delta = float(pct) / 100.0
+
+    for baseline_prev, baseline_curr in zip(baselines, baselines[1:]):
+        baseline_prev = float(baseline_prev)
+        baseline_curr = float(baseline_curr)
+        if abs(baseline_prev) <= _GDP_GROWTH_EPSILON:
+            shocked.append(baseline_curr)
+            continue
+
+        implied_growth = (baseline_curr - baseline_prev) / baseline_prev
+        shocked_growth = implied_growth + shock_delta
+        shocked.append(shocked[-1] * (1.0 + shocked_growth))
+
+    return shocked
 
 
 def cell_key(col: str, row: int) -> str:
