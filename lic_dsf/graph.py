@@ -70,12 +70,12 @@ class ExportRangeConfig(TypedDict):
 # Workbook
 # ---------------------------------------------------------------------------
 
-WORKBOOK_PATH = Path("dsf-uga.xlsm")
+WORKBOOK_PATH = Path("lic-dsf-template-2025-08-12.xlsm")
 WORKBOOK_TEMPLATE_URL = (
     "https://thedocs.worldbank.org/en/doc/f0ade6bcf85b6f98dbeb2c39a2b7770c-0360012025/original/LIC-DSF-IDA21-Template-08-12-2025-vf.xlsm"
 )
 
-GRAPH_CACHE_SCHEMA = 1
+GRAPH_CACHE_SCHEMA = 2
 GRAPH_MAX_DEPTH = 50
 GRAPH_LOAD_VALUES = True
 GRAPH_USE_CACHED_DYNAMIC_REFS = True
@@ -94,33 +94,7 @@ EXPORT_DIR = Path("dist/lic-dsf-2025-08-12")
 # Export ranges
 # ---------------------------------------------------------------------------
 
-STRESS_TEST_ROW_LABELS: list[str] = [
-    "Baseline",
-    "A1. Key variables at their historical averages in 2024-2034 2/",
-    "B1. Real GDP growth",
-    "B2. Primary balance",
-    "B3. Exports",
-    "B4. Other flows 3/",
-    "B5. Depreciation",
-    "B6. Combination of B1-B5",
-    "",
-    "C1. Combined contingent liabilities",
-    "C2. Natural disaster",
-    "C3. Commodity price",
-    "C4. Market Financing",
-    "A2. Alternative Scenario :[Customize, enter title]",
-]
-
-
-STRESS_TEST_BLOCKS: list[tuple[str, int]] = [
-    ("PV of Debt-to-GDP Ratio", 239),
-    ("PV of Debt-to-Revenue Ratio", 281),
-    ("Debt Service-to-Revenue Ratio", 318),
-    ("Debt Service-to-GDP Ratio", 351),
-]
-
-
-FIGURE_DATA_ROWS: list[int] = [
+FIGURE1_DATA_ROWS: list[int] = [
     # Figure 1 (Output 2-1 Stress_Charts_Ex)
     51,
     61,
@@ -146,49 +120,11 @@ FIGURE_DATA_ROWS: list[int] = [
     189,
     190,
     192,
-    # Figure 2 extras (Output 2-2 Stress_Charts_Pub)
-    263,
-    264,
-    265,
-    267,
-    306,
-    341,
-    342,
-    343,
-]
-
-
-EXPORT_FIXED_RANGES: list[ExportRangeConfig] = [
-    {
-        "label": "External DSA risk rating signals",
-        "range_spec": "'Chart Data'!D10:D17",
-        "entrypoint_mode": "per_cell",
-    },
-    {
-        "label": "Fiscal (Total Public Debt) risk rating signals",
-        "range_spec": "'Chart Data'!I10:I14",
-        "entrypoint_mode": "per_cell",
-    },
-    {
-        "label": "Applicable tailored stress test signals",
-        "range_spec": "'Chart Data'!I17:I19",
-        "entrypoint_mode": "row_group",
-    },
-    {
-        "label": "Fiscal space for moderate risk category",
-        "range_spec": "'Chart Data'!E25:E27",
-        "entrypoint_mode": "row_group",
-    },
-    {
-        "label": "Overall rating",
-        "range_spec": "'Chart Data'!L10:L11",
-        "entrypoint_mode": "row_group",
-    },
 ]
 
 
 def _export_chart_data_ranges() -> list[ExportRangeConfig]:
-    out: list[ExportRangeConfig] = list(EXPORT_FIXED_RANGES)
+    out: list[ExportRangeConfig] = []
     seen_row_specs = {entry["range_spec"] for entry in out}
 
     def add_chart_data_row(row: int, label: str) -> None:
@@ -204,15 +140,8 @@ def _export_chart_data_ranges() -> list[ExportRangeConfig]:
         )
         seen_row_specs.add(range_spec)
 
-    for metric_label, start_row in STRESS_TEST_BLOCKS:
-        for i, row_label in enumerate(STRESS_TEST_ROW_LABELS):
-            if not row_label:
-                continue
-            row = start_row + i
-            add_chart_data_row(row, f"{metric_label} - {row_label}")
-
-    for row in FIGURE_DATA_ROWS:
-        add_chart_data_row(row, f"Figure data row {row}")
+    for row in FIGURE1_DATA_ROWS:
+        add_chart_data_row(row, f"Figure 1 data row {row}")
 
     return out
 

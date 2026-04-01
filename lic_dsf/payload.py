@@ -17,10 +17,10 @@ from excel_grapher import (
 CHART_SHEET = "Chart Data"
 YEAR_ROW = 35
 
-# Baseline GDP forecast inputs (rows 12/13), forecasts start at column X.
+# Baseline GDP forecast inputs, forecasts start at column X.
 # Slider applies relative bps: new = baseline + baseline * (bps * 1e-4) = baseline * (1 + bps * 1e-4).
 GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
-GDP_FORECAST_ROWS = (12, 13)  # 12: USD, 13: National currency (per workbook layout)
+GDP_FORECAST_ROWS = (12,)
 GDP_FORECAST_START_COL = "X"
 GDP_SHOCK_BPS_MIN = -10
 GDP_SHOCK_BPS_MAX = 10

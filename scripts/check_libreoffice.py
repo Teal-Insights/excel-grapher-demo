@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Apply GDP forecast shocks to a workbook, recalculate via LibreOffice, and compare chart output cells.
+Apply GDP forecast shocks to a workbook, recalculate via a workbook engine, and compare chart output cells.
 """
 
 from __future__ import annotations
@@ -10,16 +10,17 @@ import sys
 from pathlib import Path
 
 from lic_dsf import graph
-from lic_dsf.libreoffice import (
-    payloads_from_precache_json,
+from lic_dsf.libreoffice import payloads_from_precache_json
+from lic_dsf.workbook_backend import (
     print_check_report,
-    run_libreoffice_gdp_shock_check,
+    resolve_backend,
+    run_workbook_gdp_shock_check,
 )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="GDP shock via openpyxl + LibreOffice recalc; optional Python vs LO accuracy check."
+        description="GDP shock via workbook recalc; optional FormulaEvaluator vs workbook-engine accuracy check."
     )
     ap.add_argument(
         "--workbook",
@@ -40,16 +41,22 @@ def main() -> None:
         help="bps applied in the comparison copy (default 10).",
     )
     ap.add_argument(
+        "--backend",
+        choices=("auto", "libreoffice", "xlwings"),
+        default="auto",
+        help="Sanity-check engine: auto picks xlwings on Windows and LibreOffice on Linux.",
+    )
+    ap.add_argument(
         "--python-precache-json",
         type=Path,
         default=Path(".cache/gdp-shocks.json"),
-        help="Precache JSON to compare FormulaEvaluator vs LibreOffice.",
+        help="Precache JSON to compare FormulaEvaluator vs workbook backend.",
     )
     ap.add_argument(
         "--timeout",
         type=int,
         default=600,
-        help="LibreOffice convert timeout per invocation (seconds).",
+        help="LibreOffice convert timeout per invocation (seconds) when that backend is used.",
     )
     ap.add_argument(
         "--soffice",
@@ -81,8 +88,9 @@ def main() -> None:
             shock_bps=args.shock_bps,
         )
 
-    result = run_libreoffice_gdp_shock_check(
+    result = run_workbook_gdp_shock_check(
         args.workbook,
+        backend=resolve_backend(args.backend),
         baseline_bps=args.baseline_bps,
         shock_bps=args.shock_bps,
         timeout_s=args.timeout,

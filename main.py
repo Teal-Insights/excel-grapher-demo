@@ -26,7 +26,7 @@ from lic_dsf.payload import GDP_SHOCK_BPS_MAX, GDP_SHOCK_BPS_MIN
 from web.charts import build_chart_html, load_shock_json, slim_chart_json_for_browser
 
 _ROOT = Path(__file__).resolve().parent
-_DEFAULT_CACHE = _ROOT / ".cache" / "dsf-uga-gdp-shocks.json"
+_DEFAULT_CACHE = _ROOT / ".cache" / "gdp-shocks.json"
 _TEMPLATES_DIR = _ROOT / "templates"
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),

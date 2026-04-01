@@ -9,8 +9,9 @@ fast, pre-cached loading in the webapp.
 
 Run:
   uv run python scripts/precache.py
-  uv run python scripts/precache.py --workbook dsf-uga.xlsm
-  uv run python scripts/precache.py --libreoffice-check
+  uv run python scripts/precache.py --workbook lic-dsf-template-2025-08-12.xlsm
+  uv run python scripts/precache.py --sanity-check-backend auto
+  uv run python scripts/precache.py --sanity-check
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from lic_dsf.payload import (
     gdp_forecast_cell_keys,
     gdp_forecast_value_from_bps,
 )
+from lic_dsf.workbook_backend import resolve_backend
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +104,9 @@ def _load_graph(*, no_cache: bool) -> DependencyGraph:
     return g
 
 
-def _compute_entries(*, graph: DependencyGraph) -> tuple[CacheEntry, list[CacheEntry]]:
+def _compute_formula_evaluator_entries(
+    *, graph: DependencyGraph
+) -> tuple[CacheEntry, list[CacheEntry]]:
     keys = gdp_forecast_cell_keys(graph, workbook_path=lic_graph.WORKBOOK_PATH)
     if not keys:
         raise RuntimeError(
@@ -183,9 +187,17 @@ def main() -> None:
         help="Ignore graph pickle cache and rebuild the dependency graph from workbook.",
     )
     ap.add_argument(
+        "--sanity-check",
         "--libreoffice-check",
+        dest="sanity_check",
         action="store_true",
-        help="After caching, run LibreOffice recalc and compare Chart Data to FormulaEvaluator (Python vs LO).",
+        help="After caching, run the workbook-engine sanity check. `--libreoffice-check` remains as a compatibility alias.",
+    )
+    ap.add_argument(
+        "--sanity-check-backend",
+        choices=("auto", "libreoffice", "xlwings"),
+        default="auto",
+        help="Sanity-check engine: auto picks xlwings on Windows and LibreOffice on Linux.",
     )
     ap.add_argument(
         "--lo-baseline-bps",
@@ -203,40 +215,39 @@ def main() -> None:
         "--lo-timeout",
         type=int,
         default=600,
-        help="LibreOffice check: convert timeout per run in seconds (default 600).",
+        help="Sanity check: LibreOffice convert timeout per run in seconds (default 600).",
     )
     ap.add_argument(
         "--lo-soffice",
         type=str,
         default=None,
-        help="LibreOffice check: path or binary name for soffice (default: PATH).",
+        help="Sanity check: path or binary name for soffice (default: PATH).",
     )
     ap.add_argument(
         "--lo-keep-temps",
         action="store_true",
-        help="LibreOffice check: keep temp dir; path is stored in JSON if check runs.",
+        help="Sanity check: keep temp dir; path is stored in JSON if check runs.",
     )
     ap.add_argument(
         "--lo-top-n",
         type=int,
         default=15,
-        help="LibreOffice check: number of largest |Δ| cells to embed in JSON (default 15).",
+        help="Sanity check: number of largest |Δ| cells to embed in JSON (default 15).",
     )
     ap.add_argument(
         "--lo-python-tolerance",
         type=float,
         default=None,
         metavar="EPS",
-        help="If set, exit 1 when max|Python-LO| at --lo-shock-bps exceeds EPS (after successful LO run).",
+        help="If set, exit 1 when max|Python-backend| at --lo-shock-bps exceeds EPS.",
     )
     args = ap.parse_args()
     lic_graph.WORKBOOK_PATH = args.workbook.resolve()
 
     t0 = time.perf_counter()
     graph = _load_graph(no_cache=bool(args.no_graph_cache))
-
     t1 = time.perf_counter()
-    default_entry, shocks = _compute_entries(graph=graph)
+    default_entry, shocks = _compute_formula_evaluator_entries(graph=graph)
     t2 = time.perf_counter()
 
     cache_path = lic_graph._default_graph_cache_path(lic_graph.WORKBOOK_PATH)
@@ -256,10 +267,10 @@ def main() -> None:
         },
     }
 
-    if args.libreoffice_check:
-        from lic_dsf.libreoffice import (
+    if args.sanity_check:
+        from lic_dsf.workbook_backend import (
             print_check_report,
-            run_libreoffice_gdp_shock_check,
+            run_workbook_gdp_shock_check,
         )
 
         base_e = _cache_entry_for_bps(
@@ -270,8 +281,10 @@ def main() -> None:
         )
 
         t_lo0 = time.perf_counter()
-        lo_result = run_libreoffice_gdp_shock_check(
+        check_backend = resolve_backend(args.sanity_check_backend)
+        lo_result = run_workbook_gdp_shock_check(
             lic_graph.WORKBOOK_PATH,
+            backend=check_backend,
             baseline_bps=int(args.lo_baseline_bps),
             shock_bps=int(args.lo_shock_bps),
             timeout_s=int(args.lo_timeout),
@@ -282,14 +295,14 @@ def main() -> None:
             python_shock_payload=shock_e.payload,
         )
         t_lo1 = time.perf_counter()
-        payload["timing_s"]["libreoffice_check"] = t_lo1 - t_lo0
+        payload["timing_s"]["sanity_check"] = t_lo1 - t_lo0
         payload["timing_s"]["total"] = t_lo1 - t0
-        payload["libreoffice_check"] = lo_result
+        payload["sanity_check"] = lo_result
 
         print()
         print_check_report(lo_result)
         if args.lo_python_tolerance is not None and lo_result.get("ok"):
-            pvs = lo_result.get("python_vs_libreoffice")
+            pvs = lo_result.get("python_vs_backend")
             if isinstance(pvs, dict):
                 sk = f"at_{int(args.lo_shock_bps)}_bps"
                 block = pvs.get(sk)
@@ -297,7 +310,7 @@ def main() -> None:
                     mx = block.get("max_abs_error")
                     if mx is not None and mx > float(args.lo_python_tolerance):
                         print(
-                            f"Python vs LibreOffice max|error| at {sk} = {mx:.6g} "
+                            f"Python vs workbook backend max|error| at {sk} = {mx:.6g} "
                             f"> tolerance {args.lo_python_tolerance!r}; failing.",
                             file=sys.stderr,
                         )
@@ -309,7 +322,10 @@ def main() -> None:
                         print(f"Wrote {args.out} ({len(shocks)} shocks + default).")
                         sys.exit(1)
         if not lo_result.get("ok"):
-            print("Precache JSON was still written; exit 1 due to failed LibreOffice check.", file=sys.stderr)
+            print(
+                "Precache JSON was still written; exit 1 due to failed workbook sanity check.",
+                file=sys.stderr,
+            )
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
