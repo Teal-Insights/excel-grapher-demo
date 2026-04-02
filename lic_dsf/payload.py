@@ -22,7 +22,7 @@ YEAR_ROW = 35
 # pct/100, then rebuilds every row's level series forward from its unchanged
 # first forecast cell.
 GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
-GDP_FORECAST_ROWS = (12, 13)
+GDP_FORECAST_ROWS = (12, )
 GDP_FORECAST_START_COL = "X"
 GDP_SHOCK_PCT_MIN = -5.0
 GDP_SHOCK_PCT_MAX = 5.0
