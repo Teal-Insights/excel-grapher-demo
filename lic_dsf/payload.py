@@ -18,10 +18,11 @@ CHART_SHEET = "Chart Data"
 YEAR_ROW = 35
 
 # Baseline GDP forecast inputs, forecasts start at column X.
-# Slider shocks the implied year-over-year growth rate in row 12 by pct/100,
-# then rebuilds the level series forward from the unchanged first forecast cell.
+# Slider shocks the implied year-over-year growth rate in each configured row by
+# pct/100, then rebuilds every row's level series forward from its unchanged
+# first forecast cell.
 GDP_FORECAST_SHEET = "Input 3 - Macro-Debt data(DMX)"
-GDP_FORECAST_ROWS = (12,)
+GDP_FORECAST_ROWS = (12, 13)
 GDP_FORECAST_START_COL = "X"
 GDP_SHOCK_PCT_MIN = -5.0
 GDP_SHOCK_PCT_MAX = 5.0
@@ -218,10 +219,10 @@ def gdp_shock_percent_levels() -> tuple[float, ...]:
 
 def gdp_forecast_series_from_percent(baselines: list[float], pct: float) -> list[float]:
     """
-    Shock the row-12 forecast series via implied growth rates.
+    Shock one forecast level series via implied growth rates.
 
-    The first forecast cell (X12) stays unchanged. Each later point derives its
-    baseline implied growth from consecutive baseline cells:
+    The first forecast cell stays unchanged. Each later point derives its
+    baseline implied growth from consecutive baseline levels:
 
         growth_t = (level_t - level_t-1) / level_t-1
 
@@ -249,6 +250,31 @@ def gdp_forecast_series_from_percent(baselines: list[float], pct: float) -> list
         shocked_growth = implied_growth + shock_delta
         shocked.append(shocked[-1] * (1.0 + shocked_growth))
 
+    return shocked
+
+
+def gdp_forecast_values_from_percent(baselines: list[float], pct: float) -> list[float]:
+    """
+    Shock all configured GDP forecast rows while preserving workbook key order.
+
+    Workbook reads are ordered by forecast column, then by row, e.g.
+    ``X12, X13, Y12, Y13, ...``. Each row is a separate time series, so we
+    shock each row independently and then interleave the results back into that
+    original order.
+    """
+    row_count = len(GDP_FORECAST_ROWS)
+    if row_count <= 1 or not baselines:
+        return gdp_forecast_series_from_percent(baselines, pct)
+    if len(baselines) % row_count != 0:
+        raise ValueError(
+            "GDP forecast baseline count must be divisible by the configured row count."
+        )
+
+    shocked = [0.0] * len(baselines)
+    for row_offset in range(row_count):
+        row_baselines = baselines[row_offset::row_count]
+        row_shocked = gdp_forecast_series_from_percent(row_baselines, pct)
+        shocked[row_offset::row_count] = row_shocked
     return shocked
 
 

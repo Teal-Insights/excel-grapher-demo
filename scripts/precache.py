@@ -41,7 +41,7 @@ from lic_dsf.payload import (
     build_figure1_payload,
     gdp_forecast_baselines,
     gdp_forecast_cell_keys,
-    gdp_forecast_series_from_percent,
+    gdp_forecast_values_from_percent,
     gdp_shock_percent_levels,
 )
 
@@ -140,7 +140,7 @@ def _compute_formula_evaluator_entries(
     )
 
     def eval_at_pct(pct: float) -> CacheEntry:
-        shocked_series = gdp_forecast_series_from_percent(baselines, pct)
+        shocked_series = gdp_forecast_values_from_percent(baselines, pct)
         for k, value in zip(keys, shocked_series, strict=True):
             ev.set_value(k, value)
         payload = build_figure1_payload(

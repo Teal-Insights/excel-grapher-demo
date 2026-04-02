@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from lic_dsf.payload import gdp_forecast_series_from_percent
+from lic_dsf.payload import (
+    gdp_forecast_series_from_percent,
+    gdp_forecast_values_from_percent,
+)
 
 
 class GdpShockSeriesTests(unittest.TestCase):
@@ -41,6 +44,16 @@ class GdpShockSeriesTests(unittest.TestCase):
         self.assertEqual(shocked[0], 0.0)
         self.assertEqual(shocked[1], 10.0)
         self.assertAlmostEqual(shocked[2], 15.5)
+
+    def test_multirow_forecasts_are_shocked_independently(self) -> None:
+        baselines = [100.0, 200.0, 110.0, 220.0, 121.0, 242.0]
+
+        shocked = gdp_forecast_values_from_percent(baselines, 5.0)
+
+        expected = [100.0, 200.0, 115.0, 230.0, 132.25, 264.5]
+        self.assertEqual(len(shocked), len(expected))
+        for actual, want in zip(shocked, expected, strict=True):
+            self.assertAlmostEqual(actual, want)
 
 
 if __name__ == "__main__":
